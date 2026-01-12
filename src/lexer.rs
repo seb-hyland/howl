@@ -3,7 +3,7 @@ use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
-    sync::Arc,
+    rc::Rc,
 };
 
 pub struct Token {
@@ -77,27 +77,27 @@ impl Display for Keyword {
 
 #[derive(Default)]
 pub struct IdentArena {
-    map: HashMap<Arc<str>, usize>,
-    vec: Vec<Arc<str>>,
+    map: HashMap<Rc<str>, usize>,
+    vec: Vec<Rc<str>>,
 }
 
 impl IdentArena {
     pub fn add(&mut self, v: &[u8]) -> usize {
         let s = unsafe { str::from_utf8_unchecked(v) };
-        let arc_s = Arc::from(s);
+        let rc_s = Rc::from(s);
 
-        if let Some(&id) = self.map.get(&arc_s) {
+        if let Some(&id) = self.map.get(&rc_s) {
             return id;
         }
 
-        self.vec.push(Arc::clone(&arc_s));
+        self.vec.push(Rc::clone(&rc_s));
         let id = self.vec.len() - 1;
-        self.map.insert(arc_s, id);
+        self.map.insert(rc_s, id);
         id
     }
 
-    pub fn get(&self, id: usize) -> Option<Arc<str>> {
-        self.vec.get(id).map(Arc::clone)
+    pub fn get(&self, id: usize) -> Option<Rc<str>> {
+        self.vec.get(id).map(Rc::clone)
     }
 }
 

@@ -320,26 +320,30 @@ impl<'src> Lexer<'src> {
                 ty: TokenType::Pipe,
                 span,
             }),
-            b'"' => self.quoted(start)?,
-            _ => self.text(start)?,
+            b'"' => {
+                let t = self.quoted(start)?;
+                self.tokens.push(t)
+            }
+            _ => {
+                let t = self.text(start)?;
+                self.tokens.push(t)
+            }
         };
         Ok(Some(()))
     }
 
-    fn quoted(&mut self, start: usize) -> LexResult<()> {
+    fn quoted(&mut self, start: usize) -> LexResult<Token> {
         while let Some(&n) = self.peek() {
             if n == b'"' {
                 self.advance();
 
                 let inner_range = (start + 1)..(self.current - 1);
-                self.tokens.push(Token {
+                return Ok(Token {
                     ty: TokenType::StringLiteral(
                         Self::bytes_to_str(&self.buf[inner_range]).to_owned(),
                     ),
                     span: Span(start..self.current),
                 });
-
-                return Ok(());
             }
             self.advance();
         }
@@ -350,7 +354,7 @@ impl<'src> Lexer<'src> {
         })
     }
 
-    fn text(&mut self, start: usize) -> LexResult<()> {
+    fn text(&mut self, start: usize) -> LexResult<Token> {
         while let Some(n) = self.peek()
             && !Self::is_terminator(n)
         {
@@ -398,11 +402,10 @@ impl<'src> Lexer<'src> {
 
                     match int {
                         Ok(i) => {
-                            self.tokens.push(Token {
+                            return Ok(Token {
                                 ty: TokenType::IntLiteral(i),
                                 span: Span(range),
                             });
-                            return Ok(());
                         }
                         Err(_) => {
                             return Err(LexError {
@@ -418,11 +421,10 @@ impl<'src> Lexer<'src> {
 
                     match float {
                         Ok(i) => {
-                            self.tokens.push(Token {
+                            return Ok(Token {
                                 ty: TokenType::FloatLiteral(i),
                                 span: Span(range),
                             });
-                            return Ok(());
                         }
                         Err(_) => {
                             return Err(LexError {
@@ -445,30 +447,27 @@ impl<'src> Lexer<'src> {
             _ => None,
         };
         if let Some(ty) = bool_or_kw_ty {
-            self.tokens.push(Token {
+            return Ok(Token {
                 ty,
                 span: Span(range),
             });
-            return Ok(());
         }
 
         // Try to parse as Eq
         if bytes == b"=" {
-            self.tokens.push(Token {
+            return Ok(Token {
                 ty: TokenType::Eq,
                 span: Span(range),
             });
-            return Ok(());
         }
 
         // Try to parse as TypeIdent
         if bytes[0] == b'@' {
             let id = self.arena.add(bytes);
-            self.tokens.push(Token {
+            return Ok(Token {
                 ty: TokenType::TypeIdent(id),
                 span: Span(range),
             });
-            return Ok(());
         }
 
         // Try to parse as path
@@ -513,20 +512,18 @@ impl<'src> Lexer<'src> {
                 }
             }
 
-            self.tokens.push(Token {
+            return Ok(Token {
                 ty: TokenType::Path(path),
                 span: Span(range),
             });
-            return Ok(());
         }
 
         // I guess it's just a normal ident 😑
         let id = self.arena.add(bytes);
-        self.tokens.push(Token {
+        Ok(Token {
             ty: TokenType::Ident(id),
             span: Span(range),
-        });
-        Ok(())
+        })
     }
 }
 

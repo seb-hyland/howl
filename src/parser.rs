@@ -55,12 +55,7 @@ pub struct Block<'src> {
 }
 
 pub struct Parser<'src> {
-    buf: Token<'src>,
+    buf: Token,
     current: usize,
     expressions: Vec<Expr<'src>>,
-}
-
-pub enum Keyword {
-    Type,
-    Trait,
 }

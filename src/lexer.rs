@@ -17,7 +17,10 @@ pub enum TokenType {
     /// An ident prefixed by `@` (type-level field or handler)
     TypeIdent(usize),
     /// A path to a value, like `v.buf.0.inner`
-    Path(Vec<PathItem>),
+    Path {
+        items: Vec<PathItem>,
+        open: bool,
+    },
     /// A reserved keyword
     Keyword(Keyword),
 
@@ -55,6 +58,7 @@ impl PathItem {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
 pub enum Keyword {
     Type,
     Trait,
@@ -106,26 +110,33 @@ impl TokenType {
         match self {
             Self::Ident(id) => write!(f, "Ident({})", arena.get(*id).unwrap()),
             Self::TypeIdent(id) => write!(f, "TypeIdent({})", arena.get(*id).unwrap()),
-            Self::Path(path) => {
+            Self::Path { items, open } => {
                 write!(f, "Path(")?;
-                let mut l = f.debug_list();
-                for seg in path {
-                    struct PathItemView<'a>(&'a PathItem, &'a IdentArena);
+                let mut s = f.debug_struct("Path");
+                s.field("front_open", open);
 
-                    impl Debug for PathItemView<'_> {
-                        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                            match self.0 {
-                                PathItem::Ident(id) => {
-                                    write!(f, "Ident({})", self.1.get(*id).unwrap())
-                                }
-                                PathItem::Int(i) => write!(f, "Int({i})"),
+                struct PathItemView<'a>(&'a PathItem, &'a IdentArena);
+                impl Debug for PathItemView<'_> {
+                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        match self.0 {
+                            PathItem::Ident(id) => {
+                                write!(f, "Ident({})", self.1.get(*id).unwrap())
                             }
+                            PathItem::Int(i) => write!(f, "Int({i})"),
                         }
                     }
-
-                    l.entry(&PathItemView(seg, arena));
                 }
-                l.finish()?;
+                struct PathItemsView<'a>(&'a [PathItem], &'a IdentArena);
+                impl Debug for PathItemsView<'_> {
+                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        let mut l = f.debug_list();
+                        l.entries(self.0.iter().map(|item| PathItemView(item, self.1)));
+                        l.finish()
+                    }
+                }
+
+                s.field("items", &PathItemsView(items, arena));
+                s.finish()?;
                 write!(f, ")")
             }
             Self::Keyword(kw) => write!(f, "Keyword({kw})"),
@@ -473,6 +484,7 @@ impl<'src> Lexer<'src> {
         // Try to parse as path
         if bytes.contains(&b'.') {
             let mut last_start = 0;
+            let mut front_open = false;
             let mut path = Vec::new();
 
             for i in 0..bytes.len() {
@@ -481,10 +493,14 @@ impl<'src> Lexer<'src> {
 
                 if b == b'.' || at_end {
                     if last_start == i {
-                        return Err(LexError {
-                            err: LexErrorType::EmptyPathItem,
-                            span: Span(range),
-                        });
+                        if i == 0 {
+                            front_open = true
+                        } else {
+                            return Err(LexError {
+                                err: LexErrorType::EmptyPathItem,
+                                span: Span(range),
+                            });
+                        }
                     }
 
                     let chunk = if at_end {
@@ -513,7 +529,10 @@ impl<'src> Lexer<'src> {
             }
 
             return Ok(Token {
-                ty: TokenType::Path(path),
+                ty: TokenType::Path {
+                    items: path,
+                    open: front_open,
+                },
                 span: Span(range),
             });
         }

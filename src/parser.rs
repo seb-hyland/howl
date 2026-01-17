@@ -1,3 +1,5 @@
+use std::cell::UnsafeCell;
+
 use crate::{
     Span,
     lexer::{Keyword, Token, TokenType},
@@ -69,23 +71,63 @@ pub struct ParseError {
     span: Span,
 }
 
-enum ParseErrorType {}
+enum ParseErrorType {
+    UnexpectedToken {
+        expected: &'static [TokenType],
+        actual: Option<TokenType>,
+    },
+}
 
 pub struct Parser {
     buf: Vec<Token>,
-    current: usize,
+    current: UnsafeCell<usize>,
     expressions: Vec<Expr>,
 }
 
+macro_rules! unexpected_token {
+    ($expected:expr, $actual:expr, $span:expr) => {
+        return Err($crate::parser::ParseError {
+            ty: $crate::parser::ParseErrorType::UnexpectedToken {
+                expected: $expected,
+                actual: $actual,
+            },
+            span: $span.clone(),
+        })
+    };
+}
+
+macro_rules! advance_and_assert_type {
+    ($self:expr, $expected:expr, $last_span:expr) => {{
+        let next = $self.advance();
+        match next {
+            Some(token) => {
+                if std::mem::discriminant(&token.ty) == std::mem::discriminant(&$expected) {
+                    token
+                } else {
+                    unexpected_token!(&[$expected], Some(token.ty.clone()), token.span);
+                }
+            }
+            None => {
+                unexpected_token!(&[$expected], None, $last_span);
+            }
+        }
+    }};
+}
+
+mod restriction;
+mod typedef;
+
 impl Parser {
     fn peek(&self) -> Option<&Token> {
-        self.buf.get(self.current)
+        self.buf.get(unsafe { *self.current.get() })
     }
 
-    fn advance(&mut self) -> Option<&Token> {
-        let cur_byte = self.buf.get(self.current);
+    fn advance(&self) -> Option<&Token> {
+        let ptr = self.current.get();
+
+        let cur_byte = self.buf.get(unsafe { *ptr });
         if cur_byte.is_some() {
-            self.current += 1;
+            unsafe { *ptr += 1 };
         }
         cur_byte
     }
@@ -96,11 +138,11 @@ impl Parser {
             None => return Ok(None),
         };
         match first_token.ty {
-            TokenType::Keyword(k) if k == Keyword::Type => {
-                return self.parse_type().map(|v| Some(v));
+            TokenType::Keyword(Keyword::Type) => {
+                return self.parse_type().map(Some);
             }
-            TokenType::Keyword(k) if k == Keyword::Trait => {
-                return self.parse_trait().map(|v| Some(v));
+            TokenType::Keyword(Keyword::Trait) => {
+                return self.parse_trait().map(Some);
             }
             _ => {}
         };
@@ -108,7 +150,7 @@ impl Parser {
         todo!("")
     }
 
-    fn parse_type(&mut self) -> ParseResult<Stmt> {}
-
-    fn parse_trait(&mut self) -> ParseResult<Stmt> {}
+    fn parse_trait(&mut self) -> ParseResult<Stmt> {
+        todo!()
+    }
 }

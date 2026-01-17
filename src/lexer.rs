@@ -11,6 +11,7 @@ pub struct Token {
     pub span: Span,
 }
 
+#[derive(PartialEq, Clone)]
 pub enum TokenType {
     // Identifier variants
     Ident(usize),
@@ -32,7 +33,6 @@ pub enum TokenType {
 
     // Punctuation
     Eq,
-    At,
     Hashtag,
     OpenParen,
     CloseParen,
@@ -44,6 +44,7 @@ pub enum TokenType {
     Semicolon,
 }
 
+#[derive(PartialEq, Clone)]
 pub enum PathItem {
     Ident(usize),
     Int(i64),
@@ -106,13 +107,39 @@ impl IdentArena {
 }
 
 impl TokenType {
-    pub fn emit(&self, arena: &IdentArena, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+    pub fn name(&self) -> &'static str {
         match self {
-            Self::Ident(id) => write!(f, "Ident({})", arena.get(*id).unwrap()),
-            Self::TypeIdent(id) => write!(f, "TypeIdent({})", arena.get(*id).unwrap()),
+            Self::Ident(_) => "Identifier",
+            Self::TypeIdent(_) => "TypeIdentifier",
+            Self::Path { .. } => "Path",
+            Self::Keyword(k) => match k {
+                Keyword::Opaque => "Keyword Opaque",
+                Keyword::Type => "Keyword Type",
+                Keyword::Trait => "Keyword Trait",
+            },
+            Self::IntLiteral(_) => "IntegerLiteral",
+            Self::FloatLiteral(_) => "FloatLiteral",
+            Self::StringLiteral(_) => "StringLiteral",
+            Self::BoolLiteral(_) => "BoolLiteral",
+            Self::Eq => "Eq",
+            Self::Hashtag => "Hashtag",
+            Self::OpenParen => "OpenParen",
+            Self::CloseParen => "CloseParen",
+            Self::OpenBrace => "OpenBrace",
+            Self::CloseBrace => "CloseBrace",
+            Self::Colon => "Colon",
+            Self::Comma => "Comma",
+            Self::Pipe => "Pipe",
+            Self::Semicolon => "Semicolon",
+        }
+    }
+    pub fn emit(&self, arena: &IdentArena, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        let name = self.name();
+        match self {
+            Self::Ident(id) => write!(f, "{name}({})", arena.get(*id).unwrap()),
+            Self::TypeIdent(id) => write!(f, "{name}({})", arena.get(*id).unwrap()),
             Self::Path { items, open } => {
-                write!(f, "Path(")?;
-                let mut s = f.debug_struct("Path");
+                let mut s = f.debug_struct(name);
                 s.field("front_open", open);
 
                 struct PathItemView<'a>(&'a PathItem, &'a IdentArena);
@@ -136,25 +163,23 @@ impl TokenType {
                 }
 
                 s.field("items", &PathItemsView(items, arena));
-                s.finish()?;
-                write!(f, ")")
+                s.finish()
             }
-            Self::Keyword(kw) => write!(f, "Keyword({kw})"),
-            Self::IntLiteral(i) => write!(f, "Int({i})"),
-            Self::FloatLiteral(n) => write!(f, "Float({n})"),
-            Self::StringLiteral(t) => write!(f, "String({t})"),
-            Self::BoolLiteral(b) => write!(f, "Bool({b})"),
-            Self::Eq => write!(f, "Eq"),
-            Self::At => write!(f, "At"),
-            Self::Hashtag => write!(f, "Hashtag"),
-            Self::OpenParen => write!(f, "OpenParen"),
-            Self::CloseParen => write!(f, "CloseParen"),
-            Self::OpenBrace => write!(f, "OpenBrace"),
-            Self::CloseBrace => write!(f, "CloseBrace"),
-            Self::Colon => write!(f, "Colon"),
-            Self::Comma => write!(f, "Comma"),
-            Self::Pipe => write!(f, "Pipe"),
-            Self::Semicolon => write!(f, "Semicolon"),
+            Self::Keyword(kw) => write!(f, "{name}({kw})"),
+            Self::IntLiteral(i) => write!(f, "{name}({i})"),
+            Self::FloatLiteral(n) => write!(f, "{name}({n})"),
+            Self::StringLiteral(t) => write!(f, "{name}({t})"),
+            Self::BoolLiteral(b) => write!(f, "{name}({b})"),
+            Self::Eq => write!(f, "{name}"),
+            Self::Hashtag => write!(f, "{name}"),
+            Self::OpenParen => write!(f, "{name}"),
+            Self::CloseParen => write!(f, "{name}"),
+            Self::OpenBrace => write!(f, "{name}"),
+            Self::CloseBrace => write!(f, "{name}"),
+            Self::Colon => write!(f, "{name}"),
+            Self::Comma => write!(f, "{name}"),
+            Self::Pipe => write!(f, "{name}"),
+            Self::Semicolon => write!(f, "{name}"),
         }
     }
 }
@@ -291,10 +316,6 @@ impl<'src> Lexer<'src> {
         let span = Span(start..self.current);
 
         match byte {
-            b'@' => self.tokens.push(Token {
-                ty: TokenType::At,
-                span,
-            }),
             b'#' => self.tokens.push(Token {
                 ty: TokenType::Hashtag,
                 span,

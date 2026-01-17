@@ -24,40 +24,39 @@ impl Parser {
         let mut type_fields = Vec::new();
 
         loop {
-            match self.advance() {
+            let field_token = match self.advance() {
                 None => unexpected_token!(
-                    &[
-                        TokenType::Ident(0),
-                        TokenType::TypeIdent(0),
-                        TokenType::Keyword(Keyword::Opaque),
-                        TokenType::CloseParen
-                    ],
+                    &[TokenType::Ident(0), TokenType::TypeIdent(0),],
                     None,
                     last_span
                 ),
-                Some(token) => match token.ty {
-                    TokenType::CloseParen => {
-                        break;
-                    }
-                    TokenType::Ident(id) | TokenType::TypeIdent(id) => {
-                        let mut push_vec = match token.ty {
-                            TokenType::Ident(_) => &mut instance_fields,
-                            TokenType::TypeIdent(_) => &mut type_fields,
-                            _ => unreachable!(),
-                        };
-                        let field_ident = Ident {
-                            id,
-                            span: token.span.clone(),
-                        };
-                        match self.advance() {
-                            Some(next_token) => match next_token.ty {
-                                TokenType::Colon => Some(self.parse_restriction()?),
-                                TokenType::Comma => None,
-                            },
-                        };
-                    }
-                    _ => {}
-                },
+                Some(token) => token,
+            };
+            match field_token.ty {
+                TokenType::CloseParen => {
+                    break;
+                }
+                TokenType::Ident(id) | TokenType::TypeIdent(id) => {
+                    let push_vec = match field_token.ty {
+                        TokenType::Ident(_) => &mut instance_fields,
+                        TokenType::TypeIdent(_) => &mut type_fields,
+                        _ => unreachable!(),
+                    };
+                    let field_ident = Ident {
+                        id,
+                        span: field_token.span.clone(),
+                    };
+                    push_vec.push(field_ident);
+                    let _comma = advance_and_assert_type!(self, TokenType::Comma, field_token.span);
+                    last_span = &_comma.span;
+                }
+                _ => {
+                    unexpected_token!(
+                        &[TokenType::Ident(0), TokenType::TypeIdent(0),],
+                        Some(field_token.ty.clone()),
+                        field_token.span
+                    )
+                }
             }
         }
         let _stmt_end = advance_and_assert_type!(self, TokenType::Semicolon, last_span);

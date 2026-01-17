@@ -33,14 +33,14 @@ pub enum TokenType {
 
     // Punctuation
     Eq,
-    Hashtag,
+    // Hashtag,
     OpenParen,
     CloseParen,
     OpenBrace,
     CloseBrace,
-    Colon,
+    // Colon,
     Comma,
-    Pipe,
+    // Pipe,
     Semicolon,
 }
 
@@ -62,8 +62,8 @@ impl PathItem {
 #[derive(Clone, Copy, PartialEq)]
 pub enum Keyword {
     Type,
-    Trait,
-    Opaque,
+    // Trait,
+    // Opaque,
 }
 
 impl Display for Keyword {
@@ -73,8 +73,8 @@ impl Display for Keyword {
             "{}",
             match self {
                 Self::Type => "type",
-                Self::Trait => "trait",
-                Self::Opaque => "opaque",
+                // Self::Trait => "trait",
+                // Self::Opaque => "opaque",
             }
         )
     }
@@ -113,23 +113,23 @@ impl TokenType {
             Self::TypeIdent(_) => "TypeIdentifier",
             Self::Path { .. } => "Path",
             Self::Keyword(k) => match k {
-                Keyword::Opaque => "Keyword Opaque",
+                // Keyword::Opaque => "Keyword Opaque",
                 Keyword::Type => "Keyword Type",
-                Keyword::Trait => "Keyword Trait",
+                // Keyword::Trait => "Keyword Trait",
             },
             Self::IntLiteral(_) => "IntegerLiteral",
             Self::FloatLiteral(_) => "FloatLiteral",
             Self::StringLiteral(_) => "StringLiteral",
             Self::BoolLiteral(_) => "BoolLiteral",
             Self::Eq => "Eq",
-            Self::Hashtag => "Hashtag",
+            // Self::Hashtag => "Hashtag",
             Self::OpenParen => "OpenParen",
             Self::CloseParen => "CloseParen",
             Self::OpenBrace => "OpenBrace",
             Self::CloseBrace => "CloseBrace",
-            Self::Colon => "Colon",
+            // Self::Colon => "Colon",
             Self::Comma => "Comma",
-            Self::Pipe => "Pipe",
+            // Self::Pipe => "Pipe",
             Self::Semicolon => "Semicolon",
         }
     }
@@ -171,14 +171,14 @@ impl TokenType {
             Self::StringLiteral(t) => write!(f, "{name}({t})"),
             Self::BoolLiteral(b) => write!(f, "{name}({b})"),
             Self::Eq => write!(f, "{name}"),
-            Self::Hashtag => write!(f, "{name}"),
+            // Self::Hashtag => write!(f, "{name}"),
             Self::OpenParen => write!(f, "{name}"),
             Self::CloseParen => write!(f, "{name}"),
             Self::OpenBrace => write!(f, "{name}"),
             Self::CloseBrace => write!(f, "{name}"),
-            Self::Colon => write!(f, "{name}"),
+            // Self::Colon => write!(f, "{name}"),
             Self::Comma => write!(f, "{name}"),
-            Self::Pipe => write!(f, "{name}"),
+            // Self::Pipe => write!(f, "{name}"),
             Self::Semicolon => write!(f, "{name}"),
         }
     }
@@ -281,20 +281,16 @@ impl<'src> Lexer<'src> {
         cur_byte
     }
 
-    fn is_wsp(c: &u8) -> bool {
-        matches!(c, b' ' | b'\r' | b'\t' | b'\n')
-    }
-
     fn skip_whitespace(&mut self) {
         while let Some(n) = self.peek()
-            && Self::is_wsp(n)
+            && n.is_ascii_whitespace()
         {
             self.advance();
         }
     }
 
     fn is_terminator(c: &u8) -> bool {
-        Self::is_wsp(c)
+        c.is_ascii_whitespace()
             || matches!(
                 c,
                 b'(' | b')' | b'[' | b']' | b',' | b':' | b';' | b'|' | b'"'
@@ -316,10 +312,10 @@ impl<'src> Lexer<'src> {
         let span = Span(start..self.current);
 
         match byte {
-            b'#' => self.tokens.push(Token {
-                ty: TokenType::Hashtag,
-                span,
-            }),
+            // b'#' => self.tokens.push(Token {
+            //     ty: TokenType::Hashtag,
+            //     span,
+            // }),
             b'(' => self.tokens.push(Token {
                 ty: TokenType::OpenParen,
                 span,
@@ -344,14 +340,14 @@ impl<'src> Lexer<'src> {
                 ty: TokenType::Semicolon,
                 span,
             }),
-            b':' => self.tokens.push(Token {
-                ty: TokenType::Colon,
-                span,
-            }),
-            b'|' => self.tokens.push(Token {
-                ty: TokenType::Pipe,
-                span,
-            }),
+            // b':' => self.tokens.push(Token {
+            //     ty: TokenType::Colon,
+            //     span,
+            // }),
+            // b'|' => self.tokens.push(Token {
+            //     ty: TokenType::Pipe,
+            //     span,
+            // }),
             b'"' => {
                 let t = self.quoted(start)?;
                 self.tokens.push(t)
@@ -474,8 +470,8 @@ impl<'src> Lexer<'src> {
             b"true" => Some(TokenType::BoolLiteral(true)),
             b"false" => Some(TokenType::BoolLiteral(false)),
             b"type" => Some(TokenType::Keyword(Keyword::Type)),
-            b"trait" => Some(TokenType::Keyword(Keyword::Trait)),
-            b"opaque" => Some(TokenType::Keyword(Keyword::Trait)),
+            // b"trait" => Some(TokenType::Keyword(Keyword::Trait)),
+            // b"opaque" => Some(TokenType::Keyword(Keyword::Opaque)),
             _ => None,
         };
         if let Some(ty) = bool_or_kw_ty {

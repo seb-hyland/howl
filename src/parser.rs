@@ -8,41 +8,29 @@ use crate::{
 pub enum Stmt {
     TypeDefinition {
         name: Ident,
-        instance_fields: Vec<(Ident, Option<RestrictionStmt>)>,
-        type_fields: Vec<(Ident, Option<RestrictionStmt>)>,
+        instance_fields: Vec<Ident>,
+        type_fields: Vec<Ident>,
     },
-    TraitDefinition {
-        name: Ident,
-        handlers: Vec<Ident>,
-    },
+    // TraitDefinition {
+    //     name: Ident,
+    //     handlers: Vec<Ident>,
+    // },
     Assignment {
-        lhs: (Execution, Option<RestrictionStmt>),
+        lhs: Execution,
         rhs: Execution,
     },
-    Return(Execution),
     Exe(Execution),
-}
-
-pub struct RestrictionStmt {
-    pub stmt: Box<Expr>,
-    pub span: Span,
 }
 
 pub struct Execution(pub Vec<Expr>);
 
 pub enum Expr {
     Ident(Ident),
-    Tuple(Tuple),
     Literal(Literal),
-    Lambda(Lambda),
-    Block(Block),
+    Tuple(Tuple),
 }
 
-pub enum Tuple {
-    And(Vec<Expr>),
-    Map(Vec<(Ident, Expr)>),
-    Or(Vec<Expr>),
-}
+pub struct Tuple(Vec<Expr>);
 
 pub struct Ident {
     pub id: usize,
@@ -52,16 +40,7 @@ pub enum Literal {
     IntLiteral(i64, Span),
     FloatLiteral(f64, Span),
     StringLiteral(String, Span),
-}
-pub struct Lambda {
-    pub args: Vec<(Ident, Option<RestrictionStmt>)>,
-    pub return_restrict: Option<RestrictionStmt>,
-    pub body: Vec<Stmt>,
-    pub span: Span,
-}
-pub struct Block {
-    pub body: Vec<Stmt>,
-    pub span: Span,
+    BoolLiteral(bool, Span),
 }
 
 type ParseResult<T> = Result<T, ParseError>;
@@ -114,7 +93,6 @@ macro_rules! advance_and_assert_type {
     }};
 }
 
-mod restriction;
 mod typedef;
 
 impl Parser {
@@ -141,16 +119,9 @@ impl Parser {
             TokenType::Keyword(Keyword::Type) => {
                 return self.parse_type().map(Some);
             }
-            TokenType::Keyword(Keyword::Trait) => {
-                return self.parse_trait().map(Some);
-            }
             _ => {}
         };
 
         todo!("")
-    }
-
-    fn parse_trait(&mut self) -> ParseResult<Stmt> {
-        todo!()
     }
 }

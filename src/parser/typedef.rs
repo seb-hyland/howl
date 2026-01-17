@@ -26,7 +26,7 @@ impl Parser {
         loop {
             let field_token = match self.advance() {
                 None => unexpected_token!(
-                    &[TokenType::Ident(0), TokenType::TypeIdent(0),],
+                    &[TokenType::Ident(0), TokenType::TypeIdent(0)],
                     None,
                     last_span
                 ),
@@ -47,8 +47,24 @@ impl Parser {
                         span: field_token.span.clone(),
                     };
                     push_vec.push(field_ident);
-                    let _comma = advance_and_assert_type!(self, TokenType::Comma, field_token.span);
-                    last_span = &_comma.span;
+
+                    let _comma_or_closeparen = match self.advance() {
+                        Some(t) => t,
+                        None => unexpected_token!(
+                            &[TokenType::Comma, TokenType::CloseParen],
+                            None,
+                            last_span
+                        ),
+                    };
+                    match _comma_or_closeparen.ty {
+                        TokenType::Comma => last_span = &_comma_or_closeparen.span,
+                        TokenType::CloseParen => break,
+                        _ => unexpected_token!(
+                            &[TokenType::Comma, TokenType::CloseParen],
+                            Some(_comma_or_closeparen.ty.clone()),
+                            _comma_or_closeparen.span
+                        ),
+                    };
                 }
                 _ => {
                     unexpected_token!(

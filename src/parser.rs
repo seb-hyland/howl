@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::{cell::UnsafeCell, slice};
 
 use crate::{
     Span,
@@ -63,6 +63,61 @@ pub struct Parser {
     expressions: Vec<Expr>,
 }
 
+impl Parser {
+    fn peek(&self) -> Option<&Token> {
+        self.buf.get(unsafe { *self.current.get() })
+    }
+
+    fn advance(&self) -> Option<&Token> {
+        let ptr = self.current.get();
+
+        let cur_byte = self.buf.get(unsafe { *ptr });
+        if cur_byte.is_some() {
+            unsafe { *ptr += 1 };
+        }
+        cur_byte
+    }
+
+    fn peek_from_current(&self) -> slice::Iter<Token> {
+        self.buf[unsafe { *self.current.get() }..].iter()
+    }
+
+    fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>> {
+        let first_token = match self.peek() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        match first_token.ty {
+            TokenType::Keyword(Keyword::Type) => {
+                return self.parse_type().map(Some);
+            }
+            _ => {
+                let mut found_eq = false;
+                for token in self.peek_from_current() {
+                    match token.ty {
+                        TokenType::Eq => {
+                            found_eq = true;
+                            break;
+                        }
+                        TokenType::Semicolon => {
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+
+                if found_eq {
+                    self.parse_assignment()
+                } else {
+                    self.parse_evaluation()
+                }
+            }
+        };
+
+        todo!("")
+    }
+}
+
 macro_rules! unexpected_token {
     ($expected:expr, $actual:expr, $span:expr) => {
         return Err($crate::parser::ParseError {
@@ -94,34 +149,3 @@ macro_rules! advance_and_assert_type {
 }
 
 mod typedef;
-
-impl Parser {
-    fn peek(&self) -> Option<&Token> {
-        self.buf.get(unsafe { *self.current.get() })
-    }
-
-    fn advance(&self) -> Option<&Token> {
-        let ptr = self.current.get();
-
-        let cur_byte = self.buf.get(unsafe { *ptr });
-        if cur_byte.is_some() {
-            unsafe { *ptr += 1 };
-        }
-        cur_byte
-    }
-
-    fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>> {
-        let first_token = match self.peek() {
-            Some(t) => t,
-            None => return Ok(None),
-        };
-        match first_token.ty {
-            TokenType::Keyword(Keyword::Type) => {
-                return self.parse_type().map(Some);
-            }
-            _ => {}
-        };
-
-        todo!("")
-    }
-}

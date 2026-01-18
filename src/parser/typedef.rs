@@ -1,10 +1,15 @@
 use crate::{
+    StateIterator,
     lexer::{Keyword, Token, TokenType},
-    parser::{Ident, ParseResult, Parser, Stmt},
+    parser::{Ident, ParseResult, Stmt},
 };
 
-impl Parser {
-    pub fn parse_type(&mut self) -> ParseResult<Stmt> {
+pub trait ParseTypeExt {
+    fn parse_type(&mut self) -> ParseResult<Stmt>;
+}
+
+impl ParseTypeExt for StateIterator<'_, Token> {
+    fn parse_type(&mut self) -> ParseResult<Stmt> {
         let _type_ident = self.advance().unwrap();
         assert!(_type_ident.ty == TokenType::Keyword(Keyword::Type));
 
@@ -19,31 +24,30 @@ impl Parser {
 
         let (tuple, mut last_span) = match self.advance() {
             Some(Token {
-                ty: TokenType::Parenthesised(p),
+                ty: TokenType::Tuple(p),
                 span,
             }) => (p, span),
             other => unexpected_token!(
-                &[TokenType::Parenthesised(Vec::new())],
-                other.map(|o| o.ty),
+                vec![TokenType::Tuple(Vec::new())],
+                other.map(|o| o.ty.clone()),
                 name.span
             ),
         };
         let mut instance_fields = Vec::new();
         let mut type_fields = Vec::new();
+        let tuple_parser = StateIterator::new(&tuple);
 
         loop {
-            let field_token = match self.advance() {
+            let field_token = match tuple_parser.advance() {
                 None => unexpected_token!(
-                    &[TokenType::Ident(0), TokenType::TypeIdent(0)],
+                    vec![TokenType::Ident(0), TokenType::TypeIdent(0)],
                     None,
                     last_span
                 ),
                 Some(token) => token,
             };
+            last_span = &field_token.span;
             match field_token.ty {
-                TokenType::CloseParen => {
-                    break;
-                }
                 TokenType::Ident(id) | TokenType::TypeIdent(id) => {
                     let push_vec = match field_token.ty {
                         TokenType::Ident(_) => &mut instance_fields,
@@ -55,32 +59,27 @@ impl Parser {
                         span: field_token.span.clone(),
                     };
                     push_vec.push(field_ident);
-
-                    let _comma_or_closeparen = match self.advance() {
-                        Some(t) => t,
-                        None => unexpected_token!(
-                            &[TokenType::Comma, TokenType::CloseParen],
-                            None,
-                            last_span
-                        ),
-                    };
-                    match _comma_or_closeparen.ty {
-                        TokenType::Comma => last_span = &_comma_or_closeparen.span,
-                        TokenType::CloseParen => break,
-                        _ => unexpected_token!(
-                            &[TokenType::Comma, TokenType::CloseParen],
-                            Some(_comma_or_closeparen.ty.clone()),
-                            _comma_or_closeparen.span
-                        ),
-                    };
                 }
                 _ => {
                     unexpected_token!(
-                        &[TokenType::Ident(0), TokenType::TypeIdent(0),],
+                        vec![TokenType::Ident(0), TokenType::TypeIdent(0),],
                         Some(field_token.ty.clone()),
                         field_token.span
                     )
                 }
+            };
+
+            match tuple_parser.advance() {
+                Some(Token {
+                    ty: TokenType::Comma,
+                    ..
+                }) => {}
+                None => break,
+                other => unexpected_token!(
+                    vec![TokenType::Comma],
+                    other.map(|o| o.ty.clone()),
+                    field_token.span
+                ),
             }
         }
         let _stmt_end = advance_and_assert_type!(self, TokenType::Semicolon, last_span);

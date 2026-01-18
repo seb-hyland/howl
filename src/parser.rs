@@ -1,8 +1,7 @@
-use std::{cell::UnsafeCell, slice};
-
 use crate::{
-    Span,
+    Span, StateIterator,
     lexer::{Keyword, Token, TokenType},
+    parser::{execution::ParseExecutionExt, typedef::ParseTypeExt},
 };
 
 pub enum Stmt {
@@ -59,59 +58,15 @@ pub struct ParseError {
 
 enum ParseErrorType {
     UnexpectedToken {
-        expected: &'static [TokenType],
+        expected: Vec<TokenType>,
         actual: Option<TokenType>,
     },
 }
 
-pub struct Parser {
-    buf: Vec<Token>,
-    current: UnsafeCell<usize>,
-    expressions: Vec<Expr>,
+trait ParseExt {
+    fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>>;
 }
-
-impl Parser {
-    fn peek(&self) -> Option<&Token> {
-        self.buf.get(unsafe { *self.current.get() })
-    }
-
-    fn advance(&self) -> Option<&Token> {
-        let ptr = self.current.get();
-
-        let cur_byte = self.buf.get(unsafe { *ptr });
-        if cur_byte.is_some() {
-            unsafe { *ptr += 1 };
-        }
-        cur_byte
-    }
-
-    fn peek_from_current(&self) -> impl IntoIterator<Item = (usize, &Token)> {
-        self.buf[unsafe { *self.current.get() }..]
-            .iter()
-            .enumerate()
-    }
-
-    fn slice_from_current(&self, end: usize) -> &[Token] {
-        if end == 0 {
-            todo!()
-        }
-        unsafe {
-            *self.current.get() += end - 1;
-        }
-        &self.buf[unsafe { *self.current.get() }..end]
-    }
-
-    fn parse_execution(tokens: &[Token]) -> Execution {
-        match tokens {
-            [t] => Execution::Single(t),
-            [instance, message, rest @ ..] => Execution::Called {
-                instance,
-                message,
-                args: rest,
-            },
-        }
-    }
-
+impl ParseExt for StateIterator<'_, Token> {
     fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>> {
         let first_token = match self.peek() {
             Some(t) => t,
@@ -121,44 +76,7 @@ impl Parser {
             TokenType::Keyword(Keyword::Type) => {
                 return self.parse_type().map(Some);
             }
-            _ => {
-                let mut eq_idx = None;
-                let mut end_idx = None;
-
-                for (i, token) in self.peek_from_current() {
-                    match token.ty {
-                        TokenType::Eq => {
-                            eq_idx = Some(i);
-                        }
-                        TokenType::Semicolon => {
-                            end_idx = Some(i);
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-
-                let lhs = if let Some(idx) = eq_idx {
-                    let l = Some(self.slice_from_current(idx));
-                    self.advance(); // eq
-                    l
-                } else {
-                    None
-                };
-                let rhs = if let Some(end_idx) = end_idx {
-                    let r = self.slice_from_current(end_idx);
-                    self.advance(); // semicolon
-                    r
-                } else {
-                    panic!("No terminal semicolon");
-                };
-
-                if let Some(lhs) = lhs {
-                    Ok(Some(Stmt::Assignment { lhs, rhs }))
-                } else {
-                    Ok(Some(Stmt::Exe(rhs)))
-                }
-            }
+            _ => self.parse_execution().map(Some),
         }
     }
 }
@@ -183,14 +101,15 @@ macro_rules! advance_and_assert_type {
                 if std::mem::discriminant(&token.ty) == std::mem::discriminant(&$expected) {
                     token
                 } else {
-                    unexpected_token!(&[$expected], Some(token.ty.clone()), token.span);
+                    unexpected_token!(vec![$expected], Some(token.ty.clone()), token.span);
                 }
             }
             None => {
-                unexpected_token!(&[$expected], None, $last_span);
+                unexpected_token!(vec![$expected], None, $last_span);
             }
         }
     }};
 }
 
+mod execution;
 mod typedef;

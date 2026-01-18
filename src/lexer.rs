@@ -1,4 +1,4 @@
-use crate::Span;
+use crate::{Span, StateIterator};
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use std::{
     collections::HashMap,
@@ -35,7 +35,7 @@ pub enum TokenType {
     // Punctuation
     Eq,
     // Hashtag,
-    Parenthesised(Vec<Token>),
+    Tuple(Vec<Token>),
     // Colon,
     Comma,
     // Pipe,
@@ -121,7 +121,7 @@ impl TokenType {
             Self::BoolLiteral(_) => "BoolLiteral",
             Self::Eq => "Eq",
             // Self::Hashtag => "Hashtag",
-            Self::Parenthesised(_) => "Tuple",
+            Self::Tuple(_) => "Tuple",
             // Self::Colon => "Colon",
             Self::Comma => "Comma",
             // Self::Pipe => "Pipe",
@@ -167,7 +167,7 @@ impl TokenType {
             Self::BoolLiteral(b) => write!(f, "{name}({b})"),
             Self::Eq => write!(f, "{name}"),
             // Self::Hashtag => write!(f, "{name}"),
-            Self::Parenthesised(_) => write!(f, "{name}"),
+            Self::Tuple(_) => write!(f, "{name}"),
             // Self::Colon => write!(f, "{name}"),
             Self::Comma => write!(f, "{name}"),
             // Self::Pipe => write!(f, "{name}"),
@@ -244,86 +244,66 @@ impl LexError {
     }
 }
 
-pub struct Lexer<'src> {
-    buf: &'src [u8],
-    current: usize,
-    arena: IdentArena,
-}
-
 enum LexedToken {
     Token(Token),
     CloseParen(Span),
     Eos,
 }
 
-impl<'src> Lexer<'src> {
-    pub fn run(src: &'src [u8]) -> LexResult<(Vec<Token>, IdentArena)> {
-        let mut parser = Self {
-            buf: src,
-            current: 0,
-            arena: IdentArena::default(),
-        };
-        let mut tokens = Vec::new();
-        loop {
-            let token = parser.parse_token()?;
-            match token {
-                LexedToken::Token(t) => tokens.push(t),
-                LexedToken::CloseParen(span) => {
-                    return Err(LexError {
-                        err: LexErrorType::UnclosedQuote,
-                        span,
-                    });
-                }
-                LexedToken::Eos => break,
+fn lex(src: &[u8]) -> LexResult<(Vec<Token>, IdentArena)> {
+    let mut parser = StateIterator::new(src);
+    let mut arena = IdentArena::default();
+    let mut tokens = Vec::new();
+
+    loop {
+        let token = parser.parse_token(&mut arena)?;
+        match token {
+            LexedToken::Token(t) => tokens.push(t),
+            LexedToken::CloseParen(span) => {
+                return Err(LexError {
+                    err: LexErrorType::UnclosedQuote,
+                    span,
+                });
             }
-        }
-        Ok((tokens, parser.arena))
-    }
-
-    fn peek(&self) -> Option<&u8> {
-        self.buf.get(self.current)
-    }
-
-    fn advance(&mut self) -> Option<&u8> {
-        let cur_byte = self.buf.get(self.current);
-        if cur_byte.is_some() {
-            self.current += 1;
-        }
-        cur_byte
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(n) = self.peek()
-            && n.is_ascii_whitespace()
-        {
-            self.advance();
+            LexedToken::Eos => break,
         }
     }
+    Ok((tokens, arena))
+}
 
-    fn is_terminator(c: &u8) -> bool {
-        c.is_ascii_whitespace()
-            || matches!(
-                c,
-                b'(' | b')' | b'[' | b']' | b',' | b':' | b';' | b'|' | b'"'
-            )
-    }
+fn is_terminator(c: &u8) -> bool {
+    c.is_ascii_whitespace()
+        || matches!(
+            c,
+            b'(' | b')' | b'[' | b']' | b',' | b':' | b';' | b'|' | b'"'
+        )
+}
 
-    fn bytes_to_str(bytes: &[u8]) -> &str {
-        unsafe { str::from_utf8_unchecked(bytes) }
-    }
+fn bytes_to_str(bytes: &[u8]) -> &str {
+    unsafe { str::from_utf8_unchecked(bytes) }
+}
 
-    fn parse_token(&mut self) -> LexResult<LexedToken> {
+trait LexExt {
+    fn parse_token(&mut self, arena: &mut IdentArena) -> LexResult<LexedToken>;
+    fn skip_whitespace(&mut self);
+    fn quoted(&mut self, start: usize) -> LexResult<Token>;
+    fn tuple(&mut self, arena: &mut IdentArena, start: usize) -> LexResult<Token>;
+    fn text(&mut self, arena: &mut IdentArena, start: usize) -> LexResult<Token>;
+}
+
+impl LexExt for StateIterator<'_, u8> {
+    fn parse_token(&mut self, arena: &mut IdentArena) -> LexResult<LexedToken> {
         self.skip_whitespace();
 
-        let start = self.current;
+        let start = self.current();
         let byte = match self.advance() {
             Some(b) => *b,
             None => return Ok(LexedToken::Eos),
         };
-        let span = Span(start..self.current);
+        let span = Span(start..self.current());
 
         Ok(match byte {
-            b'(' => LexedToken::Token(self.tuple(start)?),
+            b'(' => LexedToken::Token(self.tuple(arena, start)?),
             b')' => LexedToken::CloseParen(span),
             b',' => LexedToken::Token(Token {
                 ty: TokenType::Comma,
@@ -334,8 +314,16 @@ impl<'src> Lexer<'src> {
                 span,
             }),
             b'"' => LexedToken::Token(self.quoted(start)?),
-            _ => LexedToken::Token(self.text(start)?),
+            _ => LexedToken::Token(self.text(arena, start)?),
         })
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(n) = self.peek()
+            && n.is_ascii_whitespace()
+        {
+            self.advance();
+        }
     }
 
     fn quoted(&mut self, start: usize) -> LexResult<Token> {
@@ -343,12 +331,10 @@ impl<'src> Lexer<'src> {
             if n == b'"' {
                 self.advance();
 
-                let inner_range = (start + 1)..(self.current - 1);
+                let inner_range = (start + 1)..(self.current() - 1);
                 return Ok(Token {
-                    ty: TokenType::StringLiteral(
-                        Self::bytes_to_str(&self.buf[inner_range]).to_owned(),
-                    ),
-                    span: Span(start..self.current),
+                    ty: TokenType::StringLiteral(bytes_to_str(&self.buf[inner_range]).to_owned()),
+                    span: Span(start..self.current()),
                 });
             }
             self.advance();
@@ -356,17 +342,17 @@ impl<'src> Lexer<'src> {
 
         Err(LexError {
             err: LexErrorType::UnclosedQuote,
-            span: Span(start..self.current),
+            span: Span(start..self.current()),
         })
     }
 
-    fn tuple(&mut self, start: usize) -> LexResult<Token> {
+    fn tuple(&mut self, arena: &mut IdentArena, start: usize) -> LexResult<Token> {
         let mut inner_tokens = Vec::new();
         let mut last_idx = start + 1;
         let end_span;
 
         loop {
-            match self.parse_token()? {
+            match self.parse_token(arena)? {
                 LexedToken::Token(t) => {
                     last_idx = t.span.0.end;
                     inner_tokens.push(t);
@@ -385,18 +371,18 @@ impl<'src> Lexer<'src> {
         }
 
         Ok(Token {
-            ty: TokenType::Parenthesised(inner_tokens),
+            ty: TokenType::Tuple(inner_tokens),
             span: Span(start..end_span.0.end),
         })
     }
 
-    fn text(&mut self, start: usize) -> LexResult<Token> {
+    fn text(&mut self, arena: &mut IdentArena, start: usize) -> LexResult<Token> {
         while let Some(n) = self.peek()
-            && !Self::is_terminator(n)
+            && !is_terminator(n)
         {
             self.advance();
         }
-        let range = start..self.current;
+        let range = start..self.current();
         let bytes = &self.buf[range.clone()];
 
         assert!(!bytes.is_empty());
@@ -433,7 +419,7 @@ impl<'src> Lexer<'src> {
 
             match found_point {
                 false => {
-                    let int_s = Self::bytes_to_str(bytes);
+                    let int_s = bytes_to_str(bytes);
                     let int = int_s.parse::<i64>();
 
                     match int {
@@ -452,7 +438,7 @@ impl<'src> Lexer<'src> {
                     };
                 }
                 true => {
-                    let float_s = Self::bytes_to_str(bytes);
+                    let float_s = bytes_to_str(bytes);
                     let float = float_s.parse::<f64>();
 
                     match float {
@@ -499,7 +485,7 @@ impl<'src> Lexer<'src> {
 
         // Try to parse as TypeIdent
         if bytes[0] == b'@' {
-            let id = self.arena.add(bytes);
+            let id = arena.add(bytes);
             return Ok(Token {
                 ty: TokenType::TypeIdent(id),
                 span: Span(range),
@@ -536,7 +522,7 @@ impl<'src> Lexer<'src> {
 
                     let first_byte = chunk[0];
                     if first_byte.is_ascii_digit() {
-                        let int = Self::bytes_to_str(chunk).parse::<i64>().map_err(|_| {
+                        let int = bytes_to_str(chunk).parse::<i64>().map_err(|_| {
                             let chunk_start = start + i;
                             LexError {
                                 err: LexErrorType::InvalidIdent,
@@ -545,7 +531,7 @@ impl<'src> Lexer<'src> {
                         })?;
                         path.push(PathItem::Int(int));
                     } else {
-                        let id = self.arena.add(chunk);
+                        let id = arena.add(chunk);
                         path.push(PathItem::Ident(id));
                     }
 
@@ -563,7 +549,7 @@ impl<'src> Lexer<'src> {
         }
 
         // I guess it's just a normal ident 😑
-        let id = self.arena.add(bytes);
+        let id = arena.add(bytes);
         Ok(Token {
             ty: TokenType::Ident(id),
             span: Span(range),
@@ -577,7 +563,7 @@ mod tests {
 
     fn lex_and_print(input: &str) {
         println!("Input: {}", input);
-        match Lexer::run(input.as_bytes()) {
+        match lex(input.as_bytes()) {
             Ok(out) => println!("Tokenized: {:#}", TokenPrinter::new(&out)),
             Err(e) => e.emit(input),
         }

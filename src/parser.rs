@@ -11,10 +11,6 @@ pub enum Stmt {
         instance_fields: Vec<Ident>,
         type_fields: Vec<Ident>,
     },
-    // TraitDefinition {
-    //     name: Ident,
-    //     handlers: Vec<Ident>,
-    // },
     Assignment {
         lhs: Execution,
         rhs: Execution,
@@ -26,7 +22,7 @@ pub enum Execution {
     Single(Expr),
     Called {
         instance: Expr,
-        message: Expr,
+        message: Ident,
         args: Vec<Expr>,
     },
 }
@@ -45,10 +41,10 @@ pub struct Ident {
     pub span: Span,
 }
 pub enum Literal {
-    Int(i64, Span),
+    Int(i32, Span),
     Float(f64, Span),
-    String(String, Span),
     Bool(bool, Span),
+    String(String, Span),
 }
 
 type ParseResult<T> = Result<T, ParseError>;

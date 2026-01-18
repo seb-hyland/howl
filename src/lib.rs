@@ -1,5 +1,8 @@
+#![feature(maybe_uninit_array_assume_init)]
+
 use std::{cell::UnsafeCell, ops::Range};
 
+pub mod compiler;
 pub mod lexer;
 pub mod parser;
 pub mod vm;

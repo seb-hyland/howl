@@ -27,7 +27,7 @@ pub enum TokenType {
     Keyword(Keyword),
 
     // Literals
-    IntLiteral(i64),
+    IntLiteral(i32),
     FloatLiteral(f64),
     StringLiteral(String),
     BoolLiteral(bool),
@@ -420,7 +420,7 @@ impl LexExt for StateIterator<'_, u8> {
             match found_point {
                 false => {
                     let int_s = bytes_to_str(bytes);
-                    let int = int_s.parse::<i64>();
+                    let int = int_s.parse::<i32>();
 
                     match int {
                         Ok(i) => {

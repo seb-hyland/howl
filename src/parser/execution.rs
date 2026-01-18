@@ -40,7 +40,13 @@ pub fn parse_execution(tokens: &[Token]) -> ParseResult<Execution> {
         [t] => Execution::Single(t.to_expr()?),
         [instance, message, rest @ ..] => Execution::Called {
             instance: instance.to_expr()?,
-            message: message.to_expr()?,
+            message: match message.ty {
+                TokenType::Ident(id) => Ident {
+                    id,
+                    span: message.span.clone(),
+                },
+                _ => todo!(),
+            },
             args: rest
                 .iter()
                 .map(Token::to_expr)

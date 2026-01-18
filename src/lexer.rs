@@ -6,6 +6,7 @@ use std::{
     rc::Rc,
 };
 
+#[derive(PartialEq, Clone)]
 pub struct Token {
     pub ty: TokenType,
     pub span: Span,
@@ -34,10 +35,7 @@ pub enum TokenType {
     // Punctuation
     Eq,
     // Hashtag,
-    OpenParen,
-    CloseParen,
-    OpenBrace,
-    CloseBrace,
+    Parenthesised(Vec<Token>),
     // Colon,
     Comma,
     // Pipe,
@@ -123,10 +121,7 @@ impl TokenType {
             Self::BoolLiteral(_) => "BoolLiteral",
             Self::Eq => "Eq",
             // Self::Hashtag => "Hashtag",
-            Self::OpenParen => "OpenParen",
-            Self::CloseParen => "CloseParen",
-            Self::OpenBrace => "OpenBrace",
-            Self::CloseBrace => "CloseBrace",
+            Self::Parenthesised(_) => "Tuple",
             // Self::Colon => "Colon",
             Self::Comma => "Comma",
             // Self::Pipe => "Pipe",
@@ -172,10 +167,7 @@ impl TokenType {
             Self::BoolLiteral(b) => write!(f, "{name}({b})"),
             Self::Eq => write!(f, "{name}"),
             // Self::Hashtag => write!(f, "{name}"),
-            Self::OpenParen => write!(f, "{name}"),
-            Self::CloseParen => write!(f, "{name}"),
-            Self::OpenBrace => write!(f, "{name}"),
-            Self::CloseBrace => write!(f, "{name}"),
+            Self::Parenthesised(_) => write!(f, "{name}"),
             // Self::Colon => write!(f, "{name}"),
             Self::Comma => write!(f, "{name}"),
             // Self::Pipe => write!(f, "{name}"),
@@ -230,6 +222,7 @@ pub enum LexErrorType {
     FloatParseFailure,
     InvalidIdent,
     EmptyPathItem,
+    UnmatchedParen,
 }
 
 impl LexError {
@@ -241,6 +234,7 @@ impl LexError {
             LexErrorType::FloatParseFailure => "could not parse float literal",
             LexErrorType::InvalidIdent => "identifiers must not begin with a number or `.`",
             LexErrorType::EmptyPathItem => "data path cannot contain empty segments",
+            LexErrorType::UnmatchedParen => "no matching parenthesis found",
         };
         let snippet = Level::ERROR.primary_title(msg).element(
             Snippet::source(src).annotation(AnnotationKind::Primary.span(self.span.0.clone())),
@@ -254,7 +248,12 @@ pub struct Lexer<'src> {
     buf: &'src [u8],
     current: usize,
     arena: IdentArena,
-    tokens: Vec<Token>,
+}
+
+enum LexedToken {
+    Token(Token),
+    CloseParen(Span),
+    Eos,
 }
 
 impl<'src> Lexer<'src> {
@@ -263,10 +262,22 @@ impl<'src> Lexer<'src> {
             buf: src,
             current: 0,
             arena: IdentArena::default(),
-            tokens: Vec::new(),
         };
-        while parser.parse_token()?.is_some() {}
-        Ok((parser.tokens, parser.arena))
+        let mut tokens = Vec::new();
+        loop {
+            let token = parser.parse_token()?;
+            match token {
+                LexedToken::Token(t) => tokens.push(t),
+                LexedToken::CloseParen(span) => {
+                    return Err(LexError {
+                        err: LexErrorType::UnclosedQuote,
+                        span,
+                    });
+                }
+                LexedToken::Eos => break,
+            }
+        }
+        Ok((tokens, parser.arena))
     }
 
     fn peek(&self) -> Option<&u8> {
@@ -301,63 +312,30 @@ impl<'src> Lexer<'src> {
         unsafe { str::from_utf8_unchecked(bytes) }
     }
 
-    fn parse_token(&mut self) -> LexResult<Option<()>> {
+    fn parse_token(&mut self) -> LexResult<LexedToken> {
         self.skip_whitespace();
 
         let start = self.current;
         let byte = match self.advance() {
             Some(b) => *b,
-            None => return Ok(None),
+            None => return Ok(LexedToken::Eos),
         };
         let span = Span(start..self.current);
 
-        match byte {
-            // b'#' => self.tokens.push(Token {
-            //     ty: TokenType::Hashtag,
-            //     span,
-            // }),
-            b'(' => self.tokens.push(Token {
-                ty: TokenType::OpenParen,
-                span,
-            }),
-            b')' => self.tokens.push(Token {
-                ty: TokenType::CloseParen,
-                span,
-            }),
-            b'[' => self.tokens.push(Token {
-                ty: TokenType::OpenBrace,
-                span,
-            }),
-            b']' => self.tokens.push(Token {
-                ty: TokenType::CloseBrace,
-                span,
-            }),
-            b',' => self.tokens.push(Token {
+        Ok(match byte {
+            b'(' => LexedToken::Token(self.tuple(start)?),
+            b')' => LexedToken::CloseParen(span),
+            b',' => LexedToken::Token(Token {
                 ty: TokenType::Comma,
                 span,
             }),
-            b';' => self.tokens.push(Token {
+            b';' => LexedToken::Token(Token {
                 ty: TokenType::Semicolon,
                 span,
             }),
-            // b':' => self.tokens.push(Token {
-            //     ty: TokenType::Colon,
-            //     span,
-            // }),
-            // b'|' => self.tokens.push(Token {
-            //     ty: TokenType::Pipe,
-            //     span,
-            // }),
-            b'"' => {
-                let t = self.quoted(start)?;
-                self.tokens.push(t)
-            }
-            _ => {
-                let t = self.text(start)?;
-                self.tokens.push(t)
-            }
-        };
-        Ok(Some(()))
+            b'"' => LexedToken::Token(self.quoted(start)?),
+            _ => LexedToken::Token(self.text(start)?),
+        })
     }
 
     fn quoted(&mut self, start: usize) -> LexResult<Token> {
@@ -379,6 +357,36 @@ impl<'src> Lexer<'src> {
         Err(LexError {
             err: LexErrorType::UnclosedQuote,
             span: Span(start..self.current),
+        })
+    }
+
+    fn tuple(&mut self, start: usize) -> LexResult<Token> {
+        let mut inner_tokens = Vec::new();
+        let mut last_idx = start + 1;
+        let end_span;
+
+        loop {
+            match self.parse_token()? {
+                LexedToken::Token(t) => {
+                    last_idx = t.span.0.end;
+                    inner_tokens.push(t);
+                }
+                LexedToken::CloseParen(span) => {
+                    end_span = span;
+                    break;
+                }
+                LexedToken::Eos => {
+                    return Err(LexError {
+                        err: LexErrorType::UnmatchedParen,
+                        span: Span(start..last_idx),
+                    });
+                }
+            };
+        }
+
+        Ok(Token {
+            ty: TokenType::Parenthesised(inner_tokens),
+            span: Span(start..end_span.0.end),
         })
     }
 
@@ -467,8 +475,8 @@ impl<'src> Lexer<'src> {
 
         // Try to parse as boolean literal OR reserved keyword
         let bool_or_kw_ty = match bytes {
-            b"true" => Some(TokenType::BoolLiteral(true)),
-            b"false" => Some(TokenType::BoolLiteral(false)),
+            b"True" => Some(TokenType::BoolLiteral(true)),
+            b"False" => Some(TokenType::BoolLiteral(false)),
             b"type" => Some(TokenType::Keyword(Keyword::Type)),
             // b"trait" => Some(TokenType::Keyword(Keyword::Trait)),
             // b"opaque" => Some(TokenType::Keyword(Keyword::Opaque)),

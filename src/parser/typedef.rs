@@ -1,5 +1,5 @@
 use crate::{
-    lexer::{Keyword, TokenType},
+    lexer::{Keyword, Token, TokenType},
     parser::{Ident, ParseResult, Parser, Stmt},
 };
 
@@ -17,9 +17,17 @@ impl Parser {
             span: name.span.clone(),
         };
 
-        let _open = advance_and_assert_type!(self, TokenType::OpenParen, name.span);
-
-        let mut last_span = &_open.span;
+        let (tuple, mut last_span) = match self.advance() {
+            Some(Token {
+                ty: TokenType::Parenthesised(p),
+                span,
+            }) => (p, span),
+            other => unexpected_token!(
+                &[TokenType::Parenthesised(Vec::new())],
+                other.map(|o| o.ty),
+                name.span
+            ),
+        };
         let mut instance_fields = Vec::new();
         let mut type_fields = Vec::new();
 

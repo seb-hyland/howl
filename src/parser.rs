@@ -22,7 +22,14 @@ pub enum Stmt {
     Exe(Execution),
 }
 
-pub struct Execution(pub Vec<Expr>);
+pub enum Execution {
+    Single(Expr),
+    Called {
+        instance: Expr,
+        message: Expr,
+        args: Vec<Expr>,
+    },
+}
 
 pub enum Expr {
     Ident(Ident),
@@ -78,8 +85,31 @@ impl Parser {
         cur_byte
     }
 
-    fn peek_from_current(&self) -> slice::Iter<Token> {
-        self.buf[unsafe { *self.current.get() }..].iter()
+    fn peek_from_current(&self) -> impl IntoIterator<Item = (usize, &Token)> {
+        self.buf[unsafe { *self.current.get() }..]
+            .iter()
+            .enumerate()
+    }
+
+    fn slice_from_current(&self, end: usize) -> &[Token] {
+        if end == 0 {
+            todo!()
+        }
+        unsafe {
+            *self.current.get() += end - 1;
+        }
+        &self.buf[unsafe { *self.current.get() }..end]
+    }
+
+    fn parse_execution(tokens: &[Token]) -> Execution {
+        match tokens {
+            [t] => Execution::Single(t),
+            [instance, message, rest @ ..] => Execution::Called {
+                instance,
+                message,
+                args: rest,
+            },
+        }
     }
 
     fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>> {
@@ -92,29 +122,44 @@ impl Parser {
                 return self.parse_type().map(Some);
             }
             _ => {
-                let mut found_eq = false;
-                for token in self.peek_from_current() {
+                let mut eq_idx = None;
+                let mut end_idx = None;
+
+                for (i, token) in self.peek_from_current() {
                     match token.ty {
                         TokenType::Eq => {
-                            found_eq = true;
-                            break;
+                            eq_idx = Some(i);
                         }
                         TokenType::Semicolon => {
+                            end_idx = Some(i);
                             break;
                         }
                         _ => {}
                     }
                 }
 
-                if found_eq {
-                    self.parse_assignment()
+                let lhs = if let Some(idx) = eq_idx {
+                    let l = Some(self.slice_from_current(idx));
+                    self.advance(); // eq
+                    l
                 } else {
-                    self.parse_evaluation()
+                    None
+                };
+                let rhs = if let Some(end_idx) = end_idx {
+                    let r = self.slice_from_current(end_idx);
+                    self.advance(); // semicolon
+                    r
+                } else {
+                    panic!("No terminal semicolon");
+                };
+
+                if let Some(lhs) = lhs {
+                    Ok(Some(Stmt::Assignment { lhs, rhs }))
+                } else {
+                    Ok(Some(Stmt::Exe(rhs)))
                 }
             }
-        };
-
-        todo!("")
+        }
     }
 }
 

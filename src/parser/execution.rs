@@ -80,9 +80,12 @@ impl ParseAssignExecuteExt for StateIterator<'_, Token> {
             }
         }
 
+        let terminal_idx = end_idx.expect("No terminal semicolon");
+
         let lhs = if let Some(idx) = eq_idx {
             let l = Some(self.slice_advance(idx));
             self.advance(); // eq
+            end_idx = Some(terminal_idx - idx - 1);
             l
         } else {
             None

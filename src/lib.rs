@@ -1,10 +1,12 @@
 #![feature(maybe_uninit_array_assume_init)]
 
-use std::{cell::UnsafeCell, ops::Range};
+use crate::vm::globals::Runtime;
+use ::std::{cell::UnsafeCell, collections::HashMap, ops::Range, rc::Rc};
 
 pub mod compiler;
 pub mod lexer;
 pub mod parser;
+pub mod std;
 pub mod vm;
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
@@ -56,14 +58,62 @@ impl<'src, T> StateIterator<'src, T> {
         &self.buf[current..end_idx]
     }
 
-    fn slice_advance(&self, end: usize) -> &[T] {
-        if end == 0 {
+    fn slice_advance(&self, count: usize) -> &[T] {
+        if count == 0 {
             todo!()
         }
         let current = self.current();
 
-        let slice = &self.buf[current..current + end];
-        unsafe { *self.current.get() += end - 1 };
+        let slice = &self.buf[current..current + count];
+        unsafe { *self.current.get() += count };
         slice
     }
+}
+
+#[derive(Default, Debug)]
+pub struct IdentArena {
+    map: HashMap<Rc<str>, usize>,
+    vec: Vec<Rc<str>>,
+}
+
+impl IdentArena {
+    pub fn add(&mut self, v: &[u8]) -> usize {
+        let s = unsafe { str::from_utf8_unchecked(v) };
+        let rc_s = Rc::from(s);
+
+        if let Some(&id) = self.map.get(&rc_s) {
+            return id;
+        }
+
+        self.vec.push(Rc::clone(&rc_s));
+        let id = self.vec.len() - 1;
+        self.map.insert(rc_s, id);
+        id
+    }
+
+    pub fn get(&self, id: usize) -> Option<Rc<str>> {
+        self.vec.get(id).map(Rc::clone)
+    }
+
+    pub fn len(&self) -> usize {
+        self.vec.len()
+    }
+}
+
+pub fn eval(s: &str, rt: &mut Runtime) {
+    let tokens = match lexer::lex(s.as_bytes(), &mut rt.globals.idents) {
+        Ok(v) => v,
+        Err(e) => {
+            e.emit(s);
+            panic!();
+        }
+    };
+    let stmts = match parser::parse(&tokens) {
+        Ok(v) => v,
+        Err(_) => panic!(),
+    };
+    for stmt in stmts {
+        compiler::compile_stmt(stmt, rt);
+    }
+    vm::runtime::exe(rt);
 }

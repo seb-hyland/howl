@@ -1,0 +1,5 @@
+x = 3;
+y = x + 2;
+z = x * y;
+a = 10 +allof x y z 25;
+a display;

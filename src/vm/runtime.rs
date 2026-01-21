@@ -1,14 +1,15 @@
 use crate::vm::globals::{Handler, OpCode, Runtime};
 
-fn runtime(rt: &mut Runtime) {
-    let pc = rt.pc;
-
+pub fn exe(rt: &mut Runtime) {
+    rt.globals.vars.resize(rt.globals.idents.len(), None);
     loop {
+        let pc = rt.pc;
+
         if pc >= rt.code.len() {
             break;
         }
         match rt.code[pc] {
-            OpCode::PushLiteral(v) => rt.push_stack(v),
+            OpCode::PushLit(v) => rt.push_stack(v),
             OpCode::PushGlobal(g) => {
                 let global_val = rt.globals.vars[g];
                 if let Some(v) = global_val {
@@ -22,7 +23,7 @@ fn runtime(rt: &mut Runtime) {
                 rt.globals.vars[g] = Some(stack_value);
             }
             OpCode::SendMessage { id, arg_count } => {
-                let type_id = rt.peek().type_of();
+                let type_id = rt.peek_at(arg_count).type_of();
                 let ty = rt.globals.types.get(&type_id).expect("Type doesn't exist");
                 let handler = ty.handlers.get(&id).expect("Handler doesn't exist");
                 match handler {

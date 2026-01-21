@@ -36,7 +36,7 @@ pub fn compile_stmt(stmt: Stmt, rt: &mut Runtime) {
             };
             // TODO!!!!!!!
             // match on lhs if singular we can avoid execution
-            rt.push_op(OpCode::PushGlobal(dest.id));
+            rt.push_op(OpCode::SetGlobal(dest.id));
         }
     };
 }
@@ -66,7 +66,7 @@ pub fn compile_execution(exe: Execution, rt: &mut Runtime) {
 
 pub fn compile_expr(expr: Expr, rt: &mut Runtime) {
     match expr {
-        Expr::Literal(l) => rt.push_op(OpCode::PushLiteral(Value::from_literal(l))),
+        Expr::Literal(l) => rt.push_op(OpCode::PushLit(Value::from_literal(l))),
         Expr::Ident(i) => rt.push_op(OpCode::PushGlobal(i.id)),
         Expr::Tuple(t) => todo!(),
     }

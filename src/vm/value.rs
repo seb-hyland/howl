@@ -2,7 +2,7 @@ use crate::parser::Literal;
 use std::f64;
 
 #[repr(transparent)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Value(u64);
 
 const NAN_MASK: u64 = 0x7FF0_0000_0000_0000;

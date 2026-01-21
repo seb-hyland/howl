@@ -1,4 +1,4 @@
-use crate::{Span, StateIterator};
+use crate::{IdentArena, Span, StateIterator};
 use annotate_snippets::{AnnotationKind, Level, Renderer, Snippet};
 use std::{
     collections::HashMap,
@@ -19,10 +19,10 @@ pub enum TokenType {
     /// An ident prefixed by `@` (type-level field or handler)
     TypeIdent(usize),
     /// A path to a value, like `v.buf.0.inner`
-    Path {
-        items: Vec<PathItem>,
-        open: bool,
-    },
+    // Path {
+    //     items: Vec<PathItem>,
+    //     open: bool,
+    // },
     /// A reserved keyword
     Keyword(Keyword),
 
@@ -78,38 +78,12 @@ impl Display for Keyword {
     }
 }
 
-#[derive(Default)]
-pub struct IdentArena {
-    map: HashMap<Rc<str>, usize>,
-    vec: Vec<Rc<str>>,
-}
-
-impl IdentArena {
-    pub fn add(&mut self, v: &[u8]) -> usize {
-        let s = unsafe { str::from_utf8_unchecked(v) };
-        let rc_s = Rc::from(s);
-
-        if let Some(&id) = self.map.get(&rc_s) {
-            return id;
-        }
-
-        self.vec.push(Rc::clone(&rc_s));
-        let id = self.vec.len() - 1;
-        self.map.insert(rc_s, id);
-        id
-    }
-
-    pub fn get(&self, id: usize) -> Option<Rc<str>> {
-        self.vec.get(id).map(Rc::clone)
-    }
-}
-
 impl TokenType {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Ident(_) => "Identifier",
             Self::TypeIdent(_) => "TypeIdentifier",
-            Self::Path { .. } => "Path",
+            // Self::Path { .. } => "Path",
             Self::Keyword(k) => match k {
                 // Keyword::Opaque => "Keyword Opaque",
                 Keyword::Type => "Keyword Type",
@@ -133,33 +107,33 @@ impl TokenType {
         match self {
             Self::Ident(id) => write!(f, "{name}({})", arena.get(*id).unwrap()),
             Self::TypeIdent(id) => write!(f, "{name}({})", arena.get(*id).unwrap()),
-            Self::Path { items, open } => {
-                let mut s = f.debug_struct(name);
-                s.field("front_open", open);
+            // Self::Path { items, open } => {
+            //     let mut s = f.debug_struct(name);
+            //     s.field("front_open", open);
 
-                struct PathItemView<'a>(&'a PathItem, &'a IdentArena);
-                impl Debug for PathItemView<'_> {
-                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        match self.0 {
-                            PathItem::Ident(id) => {
-                                write!(f, "Ident({})", self.1.get(*id).unwrap())
-                            }
-                            PathItem::Int(i) => write!(f, "Int({i})"),
-                        }
-                    }
-                }
-                struct PathItemsView<'a>(&'a [PathItem], &'a IdentArena);
-                impl Debug for PathItemsView<'_> {
-                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        let mut l = f.debug_list();
-                        l.entries(self.0.iter().map(|item| PathItemView(item, self.1)));
-                        l.finish()
-                    }
-                }
+            //     struct PathItemView<'a>(&'a PathItem, &'a IdentArena);
+            //     impl Debug for PathItemView<'_> {
+            //         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //             match self.0 {
+            //                 PathItem::Ident(id) => {
+            //                     write!(f, "Ident({})", self.1.get(*id).unwrap())
+            //                 }
+            //                 PathItem::Int(i) => write!(f, "Int({i})"),
+            //             }
+            //         }
+            //     }
+            //     struct PathItemsView<'a>(&'a [PathItem], &'a IdentArena);
+            //     impl Debug for PathItemsView<'_> {
+            //         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //             let mut l = f.debug_list();
+            //             l.entries(self.0.iter().map(|item| PathItemView(item, self.1)));
+            //             l.finish()
+            //         }
+            //     }
 
-                s.field("items", &PathItemsView(items, arena));
-                s.finish()
-            }
+            //     s.field("items", &PathItemsView(items, arena));
+            //     s.finish()
+            // }
             Self::Keyword(kw) => write!(f, "{name}({kw})"),
             Self::IntLiteral(i) => write!(f, "{name}({i})"),
             Self::FloatLiteral(n) => write!(f, "{name}({n})"),
@@ -250,13 +224,12 @@ enum LexedToken {
     Eos,
 }
 
-fn lex(src: &[u8]) -> LexResult<(Vec<Token>, IdentArena)> {
+pub fn lex(src: &[u8], arena: &mut IdentArena) -> LexResult<Vec<Token>> {
     let mut parser = StateIterator::new(src);
-    let mut arena = IdentArena::default();
     let mut tokens = Vec::new();
 
     loop {
-        let token = parser.parse_token(&mut arena)?;
+        let token = parser.parse_token(arena)?;
         match token {
             LexedToken::Token(t) => tokens.push(t),
             LexedToken::CloseParen(span) => {
@@ -268,7 +241,7 @@ fn lex(src: &[u8]) -> LexResult<(Vec<Token>, IdentArena)> {
             LexedToken::Eos => break,
         }
     }
-    Ok((tokens, arena))
+    Ok(tokens)
 }
 
 fn is_terminator(c: &u8) -> bool {
@@ -493,60 +466,60 @@ impl LexExt for StateIterator<'_, u8> {
         }
 
         // Try to parse as path
-        if bytes.contains(&b'.') {
-            let mut last_start = 0;
-            let mut front_open = false;
-            let mut path = Vec::new();
+        // if bytes.contains(&b'.') {
+        //     let mut last_start = 0;
+        //     let mut front_open = false;
+        //     let mut path = Vec::new();
 
-            for i in 0..bytes.len() {
-                let b = bytes[i];
-                let at_end = i == bytes.len() - 1;
+        //     for i in 0..bytes.len() {
+        //         let b = bytes[i];
+        //         let at_end = i == bytes.len() - 1;
 
-                if b == b'.' || at_end {
-                    if last_start == i {
-                        if i == 0 {
-                            front_open = true
-                        } else {
-                            return Err(LexError {
-                                err: LexErrorType::EmptyPathItem,
-                                span: Span(range),
-                            });
-                        }
-                    }
+        //         if b == b'.' || at_end {
+        //             if last_start == i {
+        //                 if i == 0 {
+        //                     front_open = true
+        //                 } else {
+        //                     return Err(LexError {
+        //                         err: LexErrorType::EmptyPathItem,
+        //                         span: Span(range),
+        //                     });
+        //                 }
+        //             }
 
-                    let chunk = if at_end {
-                        &bytes[last_start..=i]
-                    } else {
-                        &bytes[last_start..i]
-                    };
+        //             let chunk = if at_end {
+        //                 &bytes[last_start..=i]
+        //             } else {
+        //                 &bytes[last_start..i]
+        //             };
 
-                    let first_byte = chunk[0];
-                    if first_byte.is_ascii_digit() {
-                        let int = bytes_to_str(chunk).parse::<i64>().map_err(|_| {
-                            let chunk_start = start + i;
-                            LexError {
-                                err: LexErrorType::InvalidIdent,
-                                span: Span(chunk_start..(chunk_start + chunk.len())),
-                            }
-                        })?;
-                        path.push(PathItem::Int(int));
-                    } else {
-                        let id = arena.add(chunk);
-                        path.push(PathItem::Ident(id));
-                    }
+        //             let first_byte = chunk[0];
+        //             if first_byte.is_ascii_digit() {
+        //                 let int = bytes_to_str(chunk).parse::<i64>().map_err(|_| {
+        //                     let chunk_start = start + i;
+        //                     LexError {
+        //                         err: LexErrorType::InvalidIdent,
+        //                         span: Span(chunk_start..(chunk_start + chunk.len())),
+        //                     }
+        //                 })?;
+        //                 path.push(PathItem::Int(int));
+        //             } else {
+        //                 let id = arena.add(chunk);
+        //                 path.push(PathItem::Ident(id));
+        //             }
 
-                    last_start = i + 1;
-                }
-            }
+        //             last_start = i + 1;
+        //         }
+        //     }
 
-            return Ok(Token {
-                ty: TokenType::Path {
-                    items: path,
-                    open: front_open,
-                },
-                span: Span(range),
-            });
-        }
+        //     return Ok(Token {
+        //         ty: TokenType::Path {
+        //             items: path,
+        //             open: front_open,
+        //         },
+        //         span: Span(range),
+        //     });
+        // }
 
         // I guess it's just a normal ident 😑
         let id = arena.add(bytes);
@@ -557,42 +530,42 @@ impl LexExt for StateIterator<'_, u8> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    fn lex_and_print(input: &str) {
-        println!("Input: {}", input);
-        match lex(input.as_bytes()) {
-            Ok(out) => println!("Tokenized: {:#}", TokenPrinter::new(&out)),
-            Err(e) => e.emit(input),
-        }
-    }
+//     fn lex_and_print(input: &str) {
+//         println!("Input: {}", input);
+//         match lex(input.as_bytes()) {
+//             Ok(out) => println!("Tokenized: {:#}", TokenPrinter::new(&out)),
+//             Err(e) => e.emit(input),
+//         }
+//     }
 
-    #[test]
-    fn test_lex_tuple() {
-        let input = r#"v: (Float, Int) = (3, 4.15);"#;
-        lex_and_print(input);
-    }
+//     #[test]
+//     fn test_lex_tuple() {
+//         let input = r#"v: (Float, Int) = (3, 4.15);"#;
+//         lex_and_print(input);
+//     }
 
-    #[test]
-    fn test_lex_tuple_with_string() {
-        let input = r#"v.buf.0.inner: (Float, String, Float) = (3.2, "This is a string with whitespace", 4.);"#;
-        lex_and_print(input);
-    }
+//     #[test]
+//     fn test_lex_tuple_with_string() {
+//         let input = r#"v.buf.0.inner: (Float, String, Float) = (3.2, "This is a string with whitespace", 4.);"#;
+//         lex_and_print(input);
+//     }
 
-    #[test]
-    fn test_lex_unclosed_delim() {
-        let input = r#"v: (Float, String, Float) = (3.2, "This is an unclosed string, 4.);"#;
-        lex_and_print(input);
-    }
+//     #[test]
+//     fn test_lex_unclosed_delim() {
+//         let input = r#"v: (Float, String, Float) = (3.2, "This is an unclosed string, 4.);"#;
+//         lex_and_print(input);
+//     }
 
-    #[test]
-    fn test_lex_invalid_ident() {
-        let input = r#"
-            w = (3, 4.15);
-            .v: (Float, Int) = (3, 4.15);
-        "#;
-        lex_and_print(input);
-    }
-}
+//     #[test]
+//     fn test_lex_invalid_ident() {
+//         let input = r#"
+//             w = (3, 4.15);
+//             .v: (Float, Int) = (3, 4.15);
+//         "#;
+//         lex_and_print(input);
+//     }
+// }

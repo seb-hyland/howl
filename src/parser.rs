@@ -62,6 +62,17 @@ enum ParseErrorType {
     EmptyExpression,
 }
 
+pub fn parse(v: &[Token]) -> ParseResult<Vec<Stmt>> {
+    let mut state = StateIterator::new(v);
+    let mut res = Vec::new();
+
+    while let Some(stmt) = state.parse_stmt()? {
+        res.push(stmt);
+    }
+
+    Ok(res)
+}
+
 trait ParseExt {
     fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>>;
 }

@@ -1,8 +1,9 @@
 use crate::{
     Span, StateIterator,
     lexer::{Keyword, Token, TokenType},
-    parser::{execution::ParseExecutionExt, typedef::ParseTypeExt},
+    parser::{execution::ParseAssignExecuteExt, typedef::ParseTypeExt},
 };
+use std::collections::HashMap;
 
 pub enum Stmt {
     TypeDefinition {
@@ -36,17 +37,18 @@ pub enum Expr {
     Tuple(Tuple),
 }
 
-pub struct Tuple(Vec<Expr>);
+pub struct Tuple(HashMap<Ident, Execution>);
 
+#[derive(Hash, PartialEq, Eq)]
 pub struct Ident {
     pub id: usize,
     pub span: Span,
 }
 pub enum Literal {
-    IntLiteral(i64, Span),
-    FloatLiteral(f64, Span),
-    StringLiteral(String, Span),
-    BoolLiteral(bool, Span),
+    Int(i64, Span),
+    Float(f64, Span),
+    String(String, Span),
+    Bool(bool, Span),
 }
 
 type ParseResult<T> = Result<T, ParseError>;
@@ -61,6 +63,7 @@ enum ParseErrorType {
         expected: Vec<TokenType>,
         actual: Option<TokenType>,
     },
+    EmptyExpression,
 }
 
 trait ParseExt {
@@ -73,10 +76,8 @@ impl ParseExt for StateIterator<'_, Token> {
             None => return Ok(None),
         };
         match first_token.ty {
-            TokenType::Keyword(Keyword::Type) => {
-                return self.parse_type().map(Some);
-            }
-            _ => self.parse_execution().map(Some),
+            TokenType::Keyword(Keyword::Type) => self.parse_type().map(Some),
+            _ => self.parse_assign_execute().map(Some),
         }
     }
 }
@@ -112,4 +113,5 @@ macro_rules! advance_and_assert_type {
 }
 
 mod execution;
+mod tuple;
 mod typedef;

@@ -2,8 +2,9 @@ use std::{cell::UnsafeCell, ops::Range};
 
 pub mod lexer;
 pub mod parser;
+pub mod vm;
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub struct Span(Range<usize>);
 
 pub struct StateIterator<'src, T> {
@@ -19,39 +20,47 @@ impl<'src, T> StateIterator<'src, T> {
         }
     }
 
+    #[inline(always)]
     fn current(&self) -> usize {
         unsafe { *self.current.get() }
     }
 
+    #[inline(always)]
+    fn incr_current(&self) {
+        unsafe { *self.current.get() += 1 }
+    }
+
     fn peek(&self) -> Option<&T> {
-        let current = unsafe { *self.current.get() };
-        self.buf.get(current)
+        self.buf.get(self.current())
     }
 
     fn advance(&self) -> Option<&T> {
-        let current = self.current.get();
-        let cur_item = self.buf.get(unsafe { *current });
+        let cur_item = self.buf.get(self.current());
         if cur_item.is_some() {
-            unsafe {
-                *current += 1;
-            }
+            self.incr_current();
         }
         cur_item
     }
 
     fn peek_from_current(&self) -> impl IntoIterator<Item = (usize, &T)> {
-        self.buf[unsafe { *self.current.get() }..]
-            .iter()
-            .enumerate()
+        self.buf[self.current()..].iter().enumerate()
+    }
+
+    fn slice_advance_to_end(&self) -> &[T] {
+        let current = self.current();
+        let end_idx = self.buf.len();
+        unsafe { *self.current.get() = end_idx };
+        &self.buf[current..end_idx]
     }
 
     fn slice_advance(&self, end: usize) -> &[T] {
         if end == 0 {
             todo!()
         }
-        unsafe {
-            *self.current.get() += end - 1;
-        }
-        &self.buf[unsafe { *self.current.get() }..end]
+        let current = self.current();
+
+        let slice = &self.buf[current..current + end];
+        unsafe { *self.current.get() += end - 1 };
+        slice
     }
 }

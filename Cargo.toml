@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 annotate-snippets = "0.12.10"
+peg = "0.8.5"

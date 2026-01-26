@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::vm::{
-    globals::{Handler, Runtime, Type},
+    globals::{Runtime, Type},
     value::Value,
 };
 

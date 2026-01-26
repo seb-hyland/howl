@@ -17,10 +17,10 @@ impl Value {
     // FROM_ METHODS
     pub fn from_literal(l: Literal) -> Self {
         match l {
-            Literal::Int(i, _) => Self::from_int(i),
-            Literal::Float(f, _) => Self::from_float(f),
-            Literal::Bool(b, _) => Self::from_bool(b),
-            Literal::String(s, _) => todo!(),
+            Literal::Int(i) => Self::from_int(i),
+            Literal::Float(f) => Self::from_float(f),
+            Literal::Bool(b) => Self::from_bool(b),
+            Literal::String(_) => todo!(),
         }
     }
     pub fn from_float(f: f64) -> Self {

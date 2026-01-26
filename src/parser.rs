@@ -1,124 +1,73 @@
-use crate::{
-    Span, StateIterator,
-    lexer::{Keyword, Token, TokenType},
-    parser::{execution::ParseAssignExecuteExt, typedef::ParseTypeExt},
-};
-use std::collections::HashMap;
+use crate::IdentArena;
 
+pub enum Keyword {
+    Type,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Ident {
+    pub id: u64,
+}
+
+#[derive(Debug)]
 pub enum Stmt {
-    TypeDefinition {
-        name: Ident,
-        instance_fields: Vec<Ident>,
-        type_fields: Vec<Ident>,
-    },
-    Assignment {
-        lhs: Execution,
-        rhs: Execution,
-    },
+    Assignment { dst: Ident, rhs: Execution },
     Exe(Execution),
 }
 
+#[derive(Debug)]
 pub enum Execution {
     Single(Expr),
-    Called {
-        instance: Expr,
-        message: Ident,
-        args: Vec<Expr>,
-    },
+    Called(Expr, Expr, Vec<Expr>),
 }
 
+#[derive(Clone, Debug)]
 pub enum Expr {
     Ident(Ident),
-    Literal(Literal),
-    Tuple(Tuple),
+    Lit(Literal),
 }
 
-pub struct Tuple(HashMap<Ident, Execution>);
-
-#[derive(Hash, PartialEq, Eq)]
-pub struct Ident {
-    pub id: usize,
-    pub span: Span,
-}
+#[derive(Clone, Debug)]
 pub enum Literal {
-    Int(i32, Span),
-    Float(f64, Span),
-    Bool(bool, Span),
-    String(String, Span),
+    Int(i32),
+    Float(f64),
+    Bool(bool),
+    String(String),
 }
 
-type ParseResult<T> = Result<T, ParseError>;
+peg::parser! {
+    pub grammar howl_parser(arena: &mut IdentArena) for str {
+        // Helpers
+        rule wsp() = quiet! { [c if c.is_ascii_whitespace()]+ {} }
+        rule _() = quiet! { wsp()* }
+        rule digit() -> &'input str = quiet! { $[c if c.is_ascii_digit()] } / expected!("digit")
+        rule terminator() = ['(' | ')' | '[' | ']' | ',' | ':' | ';' | '|' | '"'] / wsp()
+            rule eq() = quiet!{ "=" } / expected!("EQUAL")
 
-pub struct ParseError {
-    ty: ParseErrorType,
-    span: Span,
-}
+        // Atoms
+        rule int_literal() -> i32 = n:$(digit()+) { ? n.parse().or(Err("i32")) }
+        rule float_literal() -> f64 = n:$(digit()+ "." digit()*) { ? n.parse().or(Err("f64")) }
+        rule bool_literal() -> bool = "true" { true } / "false" { false }
+        rule str_literal() -> &'input str = "\"" s:$((!"\"" [_])*) "\"" { s }
+        rule keyword() -> Keyword = "type" &terminator() { Keyword::Type }
+        rule identifier() -> Ident =
+            quiet!{ s:$(!keyword() (!terminator() [_])+) { Ident { id: arena.add(s) } } } / expected!("identifier")
 
-enum ParseErrorType {
-    UnexpectedToken {
-        expected: Vec<TokenType>,
-        actual: Option<TokenType>,
-    },
-    EmptyExpression,
-}
+        // Language constructs
+        rule expression() -> Expr =
+            f:float_literal() { Expr::Lit(Literal::Float(f))} / i:int_literal() { Expr::Lit(Literal::Int(i))} /
+            b:bool_literal() { Expr::Lit(Literal::Bool(b))} / s:str_literal() { Expr::Lit(Literal::String(s.to_string()))} /
+            i:identifier() { Expr::Ident(i)}
+        rule execution() -> Execution =
+            i:expression() wsp() m:expression() a:(wsp() e:expression() {e})* { Execution::Called(i, m, a) } /
+            i:expression() { Execution::Single(i) }
+        rule assignment() -> (Ident, Execution) = lhs:identifier() _() eq() _() rhs:execution() { (lhs, rhs) }
+        rule stmt() -> Stmt =
+            stmt:(
+                a:assignment() { Stmt::Assignment { dst: a.0, rhs: a.1 } } / e:execution() { Stmt::Exe(e) }
+            ) _() ";" _() { stmt }
 
-pub fn parse(v: &[Token]) -> ParseResult<Vec<Stmt>> {
-    let mut state = StateIterator::new(v);
-    let mut res = Vec::new();
-
-    while let Some(stmt) = state.parse_stmt()? {
-        res.push(stmt);
-    }
-
-    Ok(res)
-}
-
-trait ParseExt {
-    fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>>;
-}
-impl ParseExt for StateIterator<'_, Token> {
-    fn parse_stmt(&mut self) -> ParseResult<Option<Stmt>> {
-        let first_token = match self.peek() {
-            Some(t) => t,
-            None => return Ok(None),
-        };
-        match first_token.ty {
-            TokenType::Keyword(Keyword::Type) => self.parse_type().map(Some),
-            _ => self.parse_assign_execute().map(Some),
-        }
+        // Top-level
+        pub rule statements() -> Vec<Stmt> = _() stmts:stmt()* _() { stmts }
     }
 }
-
-macro_rules! unexpected_token {
-    ($expected:expr, $actual:expr, $span:expr) => {
-        return Err($crate::parser::ParseError {
-            ty: $crate::parser::ParseErrorType::UnexpectedToken {
-                expected: $expected,
-                actual: $actual,
-            },
-            span: $span.clone(),
-        })
-    };
-}
-
-macro_rules! advance_and_assert_type {
-    ($self:expr, $expected:expr, $last_span:expr) => {{
-        let next = $self.advance();
-        match next {
-            Some(token) => {
-                if std::mem::discriminant(&token.ty) == std::mem::discriminant(&$expected) {
-                    token
-                } else {
-                    unexpected_token!(vec![$expected], Some(token.ty.clone()), token.span);
-                }
-            }
-            None => {
-                unexpected_token!(vec![$expected], None, $last_span);
-            }
-        }
-    }};
-}
-
-mod execution;
-mod tuple;
-mod typedef;

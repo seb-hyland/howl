@@ -1,41 +1,55 @@
-use crate::vm::globals::{Handler, OpCode, Runtime};
+use std::{
+    alloc::{Layout, alloc, dealloc},
+    ptr::NonNull,
+};
 
-pub fn exe(rt: &mut Runtime) {
-    rt.globals.vars.resize(rt.globals.idents.len(), None);
-    loop {
-        let pc = rt.pc;
+pub struct Heap {
+    ptr: NonNull<u8>,
+    layout: Layout,
+    cap: u64,
+    cursor: u64,
+}
 
-        if pc >= rt.code.len() {
-            break;
+impl Heap {
+    pub fn new_with_capacity(cap: u64) -> Self {
+        let align = 8;
+        let layout = Layout::from_size_align(cap as usize, align)
+            .expect("Invalid allocation layout when initializing heap");
+        let ptr = unsafe {
+            let raw_buf = alloc(layout);
+            NonNull::new(raw_buf).expect("Failed to allocate memory for heap")
+        };
+
+        let remainder = ptr.addr().get() % align;
+        let padding = if remainder == 0 { 0 } else { align - remainder };
+        let ptr = unsafe { ptr.add(padding) };
+
+        Self {
+            ptr,
+            layout,
+            cap,
+            cursor: padding as u64,
         }
-        match rt.code[pc] {
-            OpCode::PushLit(v) => rt.push_stack(v),
-            OpCode::PushGlobal(g) => {
-                let global_val = rt.globals.vars[g];
-                if let Some(v) = global_val {
-                    rt.push_stack(v);
-                } else {
-                    panic!("Variable doesn't exist in globals");
-                }
-            }
-            OpCode::SetGlobal(g) => {
-                let stack_value = rt.pop_stack();
-                rt.globals.vars[g] = Some(stack_value);
-            }
-            OpCode::SendMessage { id, arg_count } => {
-                let type_id = rt.peek_at(arg_count).type_of();
-                let ty = rt.globals.types.get(&type_id).expect("Type doesn't exist");
-                let handler = ty.handlers.get(&id).expect("Handler doesn't exist");
-                match handler {
-                    Handler::Extern(lambda) => {
-                        let res = lambda(rt, arg_count);
-                        if let Some(output) = res {
-                            rt.push_stack(output);
-                        }
-                    }
-                }
-            }
+    }
+
+    pub fn alloc(&mut self, size: u64) -> Option<NonNull<u8>> {
+        let current = unsafe { self.ptr.add(self.cursor as usize) };
+
+        let align = self.layout.align() as u64;
+        let remainder = size % align;
+        let padding = if remainder == 0 { 0 } else { align - remainder };
+        self.cursor += padding + size;
+
+        if self.cursor > self.cap {
+            None
+        } else {
+            Some(current)
         }
-        rt.pc += 1;
+    }
+}
+
+impl Drop for Heap {
+    fn drop(&mut self) {
+        unsafe { dealloc(self.ptr.as_ptr(), self.layout) }
     }
 }

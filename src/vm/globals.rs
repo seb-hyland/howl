@@ -28,7 +28,7 @@ pub struct Globals {
 pub struct Type {
     pub instance_fields: Vec<Ident>,
     pub type_fields: Vec<Ident>,
-    pub handlers: HashMap<usize, Handler>,
+    pub handlers: HashMap<u64, Handler>,
 }
 
 impl Runtime {
@@ -46,7 +46,8 @@ impl Runtime {
         self.stack.last().expect("Stack should not be empty")
     }
 
-    pub fn peek_at(&self, n: usize) -> Value {
+    pub fn peek_at(&self, n: u64) -> Value {
+        let n = n as usize;
         let len = self.stack.len();
         if len <= n {
             panic!(
@@ -71,7 +72,7 @@ impl Runtime {
     }
 
     pub fn register_handler(&mut self, name: &'static str, handler: ExternHandler, ty: &mut Type) {
-        let handler_id = self.globals.idents.add(name.as_bytes());
+        let handler_id = self.globals.idents.add(name);
         ty.handlers.insert(handler_id, Handler::Extern(handler));
     }
 
@@ -80,7 +81,7 @@ impl Runtime {
     }
 }
 
-type ExternHandler = fn(rt: &mut Runtime, arg_count: usize) -> Option<Value>;
+type ExternHandler = fn(rt: &mut Runtime, arg_count: u64) -> Option<Value>;
 pub enum Handler {
     Extern(ExternHandler),
 }
@@ -88,7 +89,7 @@ pub enum Handler {
 #[derive(Debug)]
 pub enum OpCode {
     PushLit(Value),
-    PushGlobal(usize),
-    SetGlobal(usize),
-    SendMessage { id: usize, arg_count: usize },
+    PushGlobal(u64),
+    SetGlobal(u64),
+    SendMessage { id: u64, arg_count: u64 },
 }

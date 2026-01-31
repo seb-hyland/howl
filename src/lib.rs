@@ -2,7 +2,7 @@
 
 use crate::{
     parser::{Stmt, howl_parser},
-    vm::globals::Runtime,
+    vm::runtime::Runtime,
 };
 use ::std::{collections::HashMap, ops::Range, rc::Rc};
 use peg::{error::ParseError, str::LineCol};

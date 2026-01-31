@@ -1,4 +1,5 @@
-use crate::vm::globals::Runtime;
+use crate::vm::runtime::Runtime;
+
 pub mod int;
 
 pub fn define_std_types(rt: &mut Runtime) {

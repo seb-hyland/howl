@@ -1,4 +1,4 @@
-use howl::vm::globals::Runtime;
+use howl::vm::runtime::Runtime;
 
 fn main() {
     let mut rt = Runtime::new();

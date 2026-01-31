@@ -2,7 +2,7 @@ use crate::parser::Literal;
 use std::f64;
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 pub struct Value(u64);
 
 const NAN_MASK: u64 = 0x7FF0_0000_0000_0000;
@@ -35,6 +35,10 @@ impl Value {
         Self(INT | (i as u64))
     }
 
+    pub fn from_uint(i: u64) -> Self {
+        Self(INT | i)
+    }
+
     pub fn from_bool(b: bool) -> Self {
         Self(FALSE | (b as u64))
     }
@@ -43,8 +47,8 @@ impl Value {
         Self(NIL)
     }
 
-    pub fn from_ptr(p: usize) -> Self {
-        Self(PTR | (p as u64))
+    pub fn from_ptr(p: u64) -> Self {
+        Self(PTR | p)
     }
 
     // IS_ METHODS
@@ -89,11 +93,15 @@ impl Value {
         (self.0 & 0x0000_FFFF_FFFF_FFFF) as i32
     }
 
+    pub fn as_uint(&self) -> u64 {
+        self.0 & 0x0000_FFFF_FFFF_FFFF
+    }
+
     pub fn as_ptr(&self) -> usize {
         (self.0 & 0x0000_FFFF_FFFF_FFFF) as usize
     }
 
-    pub fn type_of(&self) -> usize {
+    pub fn type_of(&self) -> u64 {
         match self {
             _ if self.is_nil() => 0,
             _ if self.is_ptr() => todo!(),

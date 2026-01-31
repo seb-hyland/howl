@@ -1,9 +1,6 @@
 use crate::{
     parser::{Execution, Expr, Stmt},
-    vm::{
-        globals::{OpCode, Runtime},
-        value::Value,
-    },
+    vm::{bytecode::OpCode, runtime::Runtime, value::Value},
 };
 
 pub fn compile_stmt(stmt: Stmt, rt: &mut Runtime) {

@@ -1,6 +1,9 @@
 use crate::{
     IdentArena,
-    vm::{bytecode::OpCode, value::Value},
+    vm::{
+        bytecode::OpCode,
+        value::{TypeId, Value},
+    },
 };
 use std::{
     alloc::{Layout, alloc, dealloc},
@@ -27,12 +30,12 @@ pub struct Globals {
 
 type ExternHandler = fn(rt: &mut Runtime, arg_count: u64) -> Option<Value>;
 
-impl Runtime {
-    pub fn new() -> Self {
+impl Default for Runtime {
+    fn default() -> Self {
         let mut heap = Heap::default();
         let globals = Globals {
             idents: IdentArena::default(),
-            vars: HeapMap::new(&mut heap, 1_028),
+            vars: HeapMap::new(&mut heap, 4_096),
             types: HeapMap::new(&mut heap, 64),
         };
         let mut rt = Self {
@@ -45,7 +48,9 @@ impl Runtime {
         crate::std::define_std_types(&mut rt);
         rt
     }
+}
 
+impl Runtime {
     #[inline(always)]
     pub fn push_stack(&mut self, v: Value) {
         self.stack.push(v);
@@ -81,20 +86,25 @@ impl Runtime {
         unsafe { MaybeUninit::array_assume_init(array) }
     }
 
-    pub fn define_type(&mut self, id: u64) {
+    pub fn define_type(&mut self, id: TypeId) {
         let map = HeapMap::new(&mut self.heap, 16);
         self.globals.types.insert(
-            Value::from_uint(id),
+            Value::from_uint(id as u64),
             Value::from_ptr(map.ptr.as_ptr() as u64),
         );
     }
 
-    pub fn register_handler(&mut self, name: &'static str, handler: ExternHandler, type_id: u64) {
+    pub fn register_handler(
+        &mut self,
+        name: &'static str,
+        handler: ExternHandler,
+        type_id: TypeId,
+    ) {
         let handler_map_id = self.globals.idents.add(name);
         let handler_ptr = self
             .globals
             .types
-            .get(&Value::from_uint(type_id))
+            .get(&Value::from_uint(type_id as u64))
             .unwrap()
             .as_ptr();
         let mut handler_map = unsafe {
@@ -105,6 +115,7 @@ impl Runtime {
         };
         handler_map.insert(
             Value::from_uint(handler_map_id),
+            #[allow(clippy::fn_to_numeric_cast)]
             Value::from_uint(handler as u64),
         );
     }
@@ -131,21 +142,24 @@ impl HeapMap {
             capacity,
             count: 0,
             ptr: heap
-                .alloc((capacity * 2 + Self::NUM_FIELDS) * size_of::<Value>() as u64)
+                .alloc(
+                    (capacity * 2 + Self::NUM_FIELDS) * size_of::<Value>() as u64,
+                    TypeId::HeapMap,
+                )
                 .unwrap()
                 .cast::<Value>(),
         };
 
         unsafe {
-            *map.ptr.as_ptr() = Value::from_uint(capacity);
-            *map.ptr.add(1).as_ptr() = Value::from_uint(0);
+            map.ptr.write(Value::from_uint(capacity));
+            map.ptr.add(1).write(Value::from_uint(0));
         };
 
         for i in 0..map.capacity {
             unsafe {
-                *map.ptr
+                map.ptr
                     .add(i as usize * 2 + Self::NUM_FIELDS as usize)
-                    .as_ptr() = Value::nil()
+                    .write(Value::nil())
             };
         }
 
@@ -183,24 +197,22 @@ impl HeapMap {
                 unsafe {
                     *key_ptr = k;
                     *key_ptr.add(1) = v;
+                    self.count += 1;
+                    *self.ptr.add(1).as_ptr() = Value::from_uint(self.count);
                 }
+                break;
             } else if unsafe { *key_ptr } == k {
-                unsafe {
-                    *key_ptr.add(1) = v;
-                }
+                unsafe { *key_ptr.add(1) = v };
+                break;
             } else {
                 idx = (idx + 1) & (self.capacity - 1);
                 continue;
             }
-
-            // If reached, we found a spot!
-            self.count += 1;
-            unsafe { *self.ptr.add(1).as_ptr() = Value::from_uint(self.count) };
-            break;
         }
     }
 
     fn realloc(&mut self) {
+        todo!();
         let mut new_map = HeapMap::new(unsafe { self.heap.as_mut() }, self.capacity * 2);
         for i in 0..self.capacity {
             let key = unsafe {
@@ -218,7 +230,7 @@ impl HeapMap {
     }
 
     pub fn get(&self, k: &Value) -> Option<Value> {
-        let mut idx = self.calculate_index(&k);
+        let mut idx = self.calculate_index(k);
         let start_idx = idx;
 
         loop {
@@ -250,8 +262,11 @@ pub struct Heap {
 }
 
 impl Heap {
+    const ALIGN: u64 = 16;
+
     pub fn new_with_capacity(cap: u64) -> Self {
-        let align = 8;
+        let align = Self::ALIGN as usize;
+
         let layout = Layout::from_size_align(cap as usize, align)
             .expect("Invalid allocation layout when initializing heap");
         let ptr = unsafe {
@@ -271,14 +286,19 @@ impl Heap {
         }
     }
 
-    pub fn alloc(&mut self, size: u64) -> Option<NonNull<u8>> {
+    pub fn alloc(&mut self, size: u64, type_id: TypeId) -> Option<NonNull<u8>> {
         let current = unsafe { self.ptr.add(self.cursor as usize) };
 
-        let align = self.layout.align() as u64;
-        let remainder = size % align;
+        let align = Self::ALIGN;
+        let remainder = self.cursor % align;
         let padding = if remainder == 0 { 0 } else { align - remainder };
-        self.cursor += padding + size;
         let current = unsafe { current.add(padding as usize) };
+
+        let header_size = 16;
+        unsafe { current.as_ptr().cast::<TypeId>().write(type_id) };
+
+        self.cursor += padding + size + header_size;
+        let current = unsafe { current.add(header_size as usize) };
 
         if self.cursor > self.cap {
             None

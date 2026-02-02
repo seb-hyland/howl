@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>CASTLE - Flux Dark HOWL</title>
+        <style>
+            :root {
+                /* Flux Theme Palette Mapping */
+                --bg: #1c1c24; /* sumiInk_1 */
+                --fg: #e6e3d3; /* fujiWhite */
+                --keyword: #c8a6ff; /* summerViolet */
+                --string: #97db84; /* springGreen */
+                --boolean: #a3e3ff; /* springAqua */
+                --number: #ffc55c; /* summerYellow */
+                --operator: #fce397; /* springYellow */
+                --comment: #6f6d94; /* comet */
+                --function: #9fbbf5; /* summerBlue */
+                --property: #ff94b7; /* springPink */
+                --line-highlight: #2a2a37; /* sumiInk_2 */
+            }
+
+            body {
+                background-color: var(--bg);
+                color: var(--fg);
+                font-family: "Fira Code", "JetBrains Mono", monospace;
+                padding: 2.5rem;
+                line-height: 1.6;
+            }
+
+            pre {
+                margin: 0;
+                white-space: pre;
+            }
+
+            /* Syntax Highlighting based on Flux Grammar */
+            .keyword {
+                color: var(--keyword);
+                font-style: italic;
+                font-weight: 600;
+            }
+            .string {
+                color: var(--string);
+            }
+            .number {
+                color: var(--number);
+            }
+            .boolean {
+                color: var(--boolean);
+            }
+            .operator {
+                color: var(--operator);
+            }
+            .ident {
+                color: var(--fg);
+            }
+            .method {
+                color: var(--function);
+            }
+            .object {
+                color: var(--property);
+            }
+            .punctuation {
+                color: var(--fg);
+                opacity: 0.8;
+            }
+
+            /* Layout */
+            .code-container {
+                border: 1px solid #54546d; /* greyBlue */
+                border-radius: 8px;
+                padding: 1.5rem;
+                background: #1c1c24c0; /* sumiInk_blurred */
+            }
+        </style>
+    </head>
+    <body>
+        <div class="code-container">
+            <pre><code><span class="ident">password</span> <span class="operator">=</span> <span class="boolean">Nil</span><span class="punctuation">;</span>
+<span class="ident">correctPassword</span> <span class="operator">=</span> <span class="number">241025</span><span class="punctuation">;</span>
+
+<span class="ident">init_msg</span> <span class="operator">=</span> <span class="string">"Welcome to CASTLE, the first interactive environment for HOWL. Enter commands by typing at the prompt.
+If you are the intended recipient of this message, set the password variable to reveal a secret: `password = DDMMYY;`
+Hint: by the time you read this, at least 100 days has passed since the password."</span><span class="punctuation">;</span>
+<span class="object">stdout</span> <span class="method">write</span> <span class="ident">init_msg</span><span class="punctuation">;</span>
+
+<span class="ident">authenticated</span> <span class="operator">=</span> <span class="boolean">False</span><span class="punctuation">;</span>
+<span class="ident">checkAuth</span> <span class="operator">=</span> <span class="punctuation">[</span> <span class="ident">authenticated</span> <span class="operator">=</span> <span class="object">password</span> <span class="method">==</span> <span class="ident">correctPassword</span><span class="punctuation">;</span> <span class="punctuation">]</span><span class="punctuation">;</span>
+<span class="ident">letter</span> <span class="operator">=</span> <span class="punctuation">[</span>
+    <span class="object">authenticated</span> <span class="method">ifTrue</span> <span class="punctuation">[</span> <span class="string">"&lt;letter here&gt;"</span> <span class="method">display</span><span class="punctuation">;</span> <span class="punctuation">]</span><span class="punctuation">;</span>
+<span class="punctuation">]</span><span class="punctuation">;</span>
+
+<span class="punctuation">[</span>
+    <span class="object">checkAuth</span> <span class="method">run</span><span class="punctuation">;</span>
+    <span class="object">authenticated</span> <span class="method">ifTrue</span> <span class="punctuation">[</span>
+        <span class="object">stdout</span> <span class="method">write</span> <span class="string">"🔒  "</span><span class="punctuation">;</span>
+    <span class="punctuation">]</span> <span class="punctuation">[</span>
+        <span class="object">stdout</span> <span class="method">write</span> <span class="string">"🔓  "</span><span class="punctuation">;</span>
+    <span class="punctuation">]</span><span class="punctuation">;</span>
+    <span class="ident">lastInput</span> <span class="operator">=</span> <span class="object">stdin</span> <span class="method">readLine</span><span class="punctuation">;</span>
+    <span class="object">castle</span> <span class="method">eval</span> <span class="ident">lastInput</span><span class="punctuation">;</span>
+
+    <span class="object">checkAuth</span> <span class="method">run</span><span class="punctuation">;</span>
+    <span class="object">authenticated</span> <span class="method">ifTrue</span> <span class="punctuation">[</span>
+        <span class="object">stdout</span> <span class="method">write</span> <span class="string">"Welcome, my love. Evaluate `letter run;` to read a message."</span><span class="punctuation">;</span>
+    <span class="punctuation">]</span><span class="punctuation">;</span>
+<span class="punctuation">]</span> <span class="method">loop</span><span class="punctuation">;</span></code></pre>
+        </div>
+    </body>
+</html>

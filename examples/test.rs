@@ -1,7 +1,7 @@
 use howl::vm::runtime::Runtime;
 
 fn main() {
-    let mut rt = Runtime::new();
+    let mut rt = Runtime::default();
     let file = include_str!("test.howl");
     let syntax = howl::parse(file, &mut rt).unwrap();
     // println!("{:#?}", syntax);

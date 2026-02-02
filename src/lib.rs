@@ -51,15 +51,15 @@ pub fn parse(s: &str, rt: &mut Runtime) -> Result<Vec<Stmt>, ParseError<LineCol>
 
 pub fn run(stmts: Vec<Stmt>, rt: &mut Runtime) {
     for stmt in stmts {
-        compiler::compile_stmt(stmt, rt);
+        compiler::compile_stmt(stmt, &mut rt.code, &mut rt.heap);
     }
-    vm::bytecode::exe(rt);
+    vm::bytecode::flush_runtime(rt);
 }
 
 pub fn eval(s: &str, rt: &mut Runtime) {
     let stmts = howl_parser::statements(s, &mut rt.globals.idents).unwrap();
     for stmt in stmts {
-        compiler::compile_stmt(stmt, rt);
+        compiler::compile_stmt(stmt, &mut rt.code, &mut rt.heap);
     }
-    vm::bytecode::exe(rt);
+    vm::bytecode::flush_runtime(rt);
 }

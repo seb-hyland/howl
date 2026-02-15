@@ -1,9 +1,8 @@
-use std::{slice, str};
-
 use crate::vm::{
     runtime::Runtime,
     value::{TypeId, Value},
 };
+use std::{slice, str};
 
 pub fn define_string(rt: &mut Runtime) {
     let id = TypeId::String;

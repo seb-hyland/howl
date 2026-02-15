@@ -135,6 +135,7 @@ impl Value {
 #[repr(u64)]
 #[derive(Copy, Clone)]
 pub enum TypeId {
+    NONE,
     // Primitives
     Nil,
     Int,

@@ -2,12 +2,13 @@ use crate::{
     IdentArena,
     vm::{
         bytecode::OpCode,
+        heapmap::HeapMap,
         value::{TypeId, Value},
     },
 };
 use std::{
-    alloc::{Layout, alloc, dealloc},
-    hash::{DefaultHasher, Hash, Hasher},
+    alloc::{AllocError, Allocator, Layout},
+    marker::PhantomData,
     mem::MaybeUninit,
     ptr::NonNull,
 };
@@ -125,187 +126,109 @@ impl Runtime {
     }
 }
 
-#[derive(Debug)]
-pub struct HeapMap {
-    pub heap: NonNull<Heap>,
-    pub capacity: u64,
-    pub count: u64,
-    pub ptr: NonNull<Value>,
-}
-
-impl HeapMap {
-    const NUM_FIELDS: u64 = 2;
-
-    pub fn new(heap: &mut Heap, capacity: u64) -> Self {
-        let map = Self {
-            heap: NonNull::from_mut(heap),
-            capacity,
-            count: 0,
-            ptr: heap
-                .alloc(
-                    (capacity * 2 + Self::NUM_FIELDS) * size_of::<Value>() as u64,
-                    TypeId::HeapMap,
-                )
-                .unwrap()
-                .cast::<Value>(),
-        };
-
-        unsafe {
-            map.ptr.write(Value::from_uint(capacity));
-            map.ptr.add(1).write(Value::from_uint(0));
-        };
-
-        for i in 0..map.capacity {
-            unsafe {
-                map.ptr
-                    .add(i as usize * 2 + Self::NUM_FIELDS as usize)
-                    .write(Value::nil())
-            };
-        }
-
-        map
-    }
-
-    pub unsafe fn from_ptr(ptr: NonNull<Value>, heap: &mut Heap) -> Self {
-        Self {
-            heap: NonNull::from_mut(heap),
-            capacity: unsafe { *ptr.as_ptr() }.as_uint(),
-            count: unsafe { *ptr.add(1).as_ptr() }.as_uint(),
-            ptr,
-        }
-    }
-
-    fn calculate_index(&self, key: &Value) -> u64 {
-        let mut h = DefaultHasher::new();
-        key.hash(&mut h);
-        h.finish() & (self.capacity - 1)
-    }
-
-    pub fn insert(&mut self, k: Value, v: Value) {
-        if self.count as f64 / self.capacity as f64 > 0.7 {
-            self.realloc();
-        }
-
-        let mut idx = self.calculate_index(&k);
-        loop {
-            let key_ptr = unsafe {
-                self.ptr
-                    .add(idx as usize * 2 + Self::NUM_FIELDS as usize)
-                    .as_ptr()
-            };
-            if unsafe { *key_ptr } == Value::nil() {
-                unsafe {
-                    *key_ptr = k;
-                    *key_ptr.add(1) = v;
-                    self.count += 1;
-                    *self.ptr.add(1).as_ptr() = Value::from_uint(self.count);
-                }
-                break;
-            } else if unsafe { *key_ptr } == k {
-                unsafe { *key_ptr.add(1) = v };
-                break;
-            } else {
-                idx = (idx + 1) & (self.capacity - 1);
-                continue;
-            }
-        }
-    }
-
-    fn realloc(&mut self) {
-        todo!();
-        let mut new_map = HeapMap::new(unsafe { self.heap.as_mut() }, self.capacity * 2);
-        for i in 0..self.capacity {
-            let key = unsafe {
-                *self
-                    .ptr
-                    .add(i as usize * 2 + Self::NUM_FIELDS as usize)
-                    .as_ptr()
-            };
-            if key != Value::nil() {
-                let value = unsafe { *self.ptr.add(i as usize * 2 + 1).as_ptr() };
-                new_map.insert(key, value);
-            }
-        }
-        *self = new_map;
-    }
-
-    pub fn get(&self, k: &Value) -> Option<Value> {
-        let mut idx = self.calculate_index(k);
-        let start_idx = idx;
-
-        loop {
-            let key_ptr = unsafe {
-                self.ptr
-                    .add(idx as usize * 2 + Self::NUM_FIELDS as usize)
-                    .as_ptr()
-            };
-            if unsafe { *key_ptr } == *k {
-                let value = unsafe { *key_ptr.add(1) };
-                return Some(value);
-            } else if unsafe { *key_ptr } == Value::nil() {
-                return None;
-            }
-
-            idx = (idx + 1) & (self.capacity - 1);
-            if idx == start_idx {
-                return None;
-            }
-        }
-    }
-}
-
 pub struct Heap {
     ptr: NonNull<u8>,
-    layout: Layout,
     cap: u64,
     cursor: u64,
 }
 
+pub struct HeapAllocator<T> {
+    inner: NonNull<Heap>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T> HeapAllocator<T> {
+    pub fn new(heap: &mut Heap) -> Self {
+        Self {
+            inner: NonNull::from_mut(heap),
+            _phantom: PhantomData {},
+        }
+    }
+}
+
+#[repr(C)]
+pub struct HeapMetadata {
+    type_id: TypeId,
+    alloc_size: u64,
+}
+
+pub struct Allocation {
+    header_ptr: NonNull<u8>,
+    data_ptr: NonNull<u8>,
+}
+
 impl Heap {
-    const ALIGN: u64 = 16;
+    const ALIGN: usize = 16;
 
     pub fn new_with_capacity(cap: u64) -> Self {
-        let align = Self::ALIGN as usize;
-
-        let layout = Layout::from_size_align(cap as usize, align)
+        let layout = Layout::from_size_align(cap as usize, Self::ALIGN)
             .expect("Invalid allocation layout when initializing heap");
         let ptr = unsafe {
             let raw_buf = alloc(layout);
             NonNull::new(raw_buf).expect("Failed to allocate memory for heap")
         };
-
-        let remainder = ptr.addr().get() % align;
-        let padding = if remainder == 0 { 0 } else { align - remainder };
-        let ptr = unsafe { ptr.add(padding) };
-
         Self {
             ptr,
-            layout,
             cap,
-            cursor: padding as u64,
+            cursor: 0,
         }
     }
 
-    pub fn alloc(&mut self, size: u64, type_id: TypeId) -> Option<NonNull<u8>> {
-        let current = unsafe { self.ptr.add(self.cursor as usize) };
+    pub fn alloc<DataHeader>(&mut self, layout: Layout, type_id: TypeId) -> Option<Allocation> {
+        let metadata_size = size_of::<HeapMetadata>() as u64;
+        let header_size = size_of::<DataHeader>() as u64;
+        let reserved = metadata_size + header_size;
 
-        let align = Self::ALIGN;
-        let remainder = self.cursor % align;
-        let padding = if remainder == 0 { 0 } else { align - remainder };
-        let current = unsafe { current.add(padding as usize) };
+        let earliest_start = self.cursor + reserved;
 
-        let header_size = 16;
-        unsafe { current.as_ptr().cast::<TypeId>().write(type_id) };
+        let align = layout.align() as u64;
+        let data_offset = (earliest_start + align - 1) & !(align - 1);
 
-        self.cursor += padding + size + header_size;
-        let current = unsafe { current.add(header_size as usize) };
+        let total_alloc_size = data_offset + layout.size() as u64;
+        // We are OOM :<3 (this won't happen due to pre-emptive GC eventually)
+        if total_alloc_size > self.cap {
+            return None;
+        }
 
-        if self.cursor > self.cap {
-            None
-        } else {
-            Some(current)
+        let data_ptr = unsafe { self.ptr.add(data_offset as usize) };
+        let header_ptr = unsafe { data_ptr.sub(header_size as usize) };
+        unsafe {
+            let header = HeapMetadata {
+                alloc_size: layout.size() as u64,
+                type_id,
+            };
+            let metadata_ptr = header_ptr.sub(metadata_size as usize);
+            metadata_ptr.cast::<HeapMetadata>().write(header);
+        }
+
+        self.cursor = total_alloc_size;
+        Some(Allocation {
+            header_ptr,
+            data_ptr,
+        })
+    }
+
+    pub fn get_alloc_header<Header>(&self, ptr: NonNull<u8>) -> NonNull<Header> {
+        unsafe { ptr.sub(size_of::<Header>()).cast() }
+    }
+
+    pub fn get_alloc_metadata<Header>(&self, ptr: NonNull<u8>) -> NonNull<HeapMetadata> {
+        unsafe {
+            ptr.sub(size_of::<Header>() + size_of::<HeapMetadata>())
+                .cast()
         }
     }
+}
+
+unsafe impl<Header> Allocator for HeapAllocator<Header> {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        unsafe { self.inner.as_ptr().as_mut_unchecked() }
+            .alloc::<Header>(layout, TypeId::NONE)
+            .map(|allocation| NonNull::slice_from_raw_parts(allocation.data_ptr, layout.size()))
+            .ok_or(AllocError)
+    }
+
+    unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {}
 }
 
 impl Default for Heap {
@@ -316,6 +239,11 @@ impl Default for Heap {
 
 impl Drop for Heap {
     fn drop(&mut self) {
-        unsafe { dealloc(self.ptr.as_ptr(), self.layout) }
+        unsafe {
+            dealloc(
+                self.ptr.as_ptr(),
+                Layout::from_size_align(self.cap as usize, Self::ALIGN).unwrap(),
+            )
+        }
     }
 }

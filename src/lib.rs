@@ -1,4 +1,6 @@
 #![feature(maybe_uninit_array_assume_init)]
+#![feature(allocator_api)]
+#![feature(ptr_as_ref_unchecked)]
 
 use crate::{
     parser::{Stmt, howl_parser},

@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 annotate-snippets = "0.12.10"
+hashbrown = { version = "0.16.1", features = ["nightly", "raw-entry"] }
 peg = "0.8.5"

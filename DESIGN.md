@@ -1,233 +1,204 @@
-# Type system
-## Anonymous Types
-Values are assigned in their scope via the `=` shorthand.
-```typescript-ts
-v = 2;
-```
-Tuples can be constructed using parentheses, and accessed by index.
-```typescript-ts
-v = (2.0, 3);              w = v.0;
-v = (1.0, "Hi!", 5);       w = v.2;
-```
-Lists are a 'special case' of tuples for an unspecified number of items of homogeneous type.
-```typescript-ts
-v = (2.0, 3.0, 1.0);       w = v.1;
-```
-Tuples can also have named fields, which are accessed by name.
-```typescript-ts
-v = (x = 4.0, y = 10);     w = v.x;
-```
-All data is represented as a tuple.
-```typescript-ts
-5 == (5)     // true
-```
+# Foreward
+> The computer revolution hasn't happened yet.
+> 
+> _Alan Kay_
 
-## Named Types
-Types are constructed via the `type` keyword. Fields prefixed by `@` are 'type fields' rather than 'instance fields'.
-```typescript-ts
-type Point (
-    x, y,
-    // Field shared between all Point instances
-    @color,
-)
-```
-Instances of a type can be constructed by default with named-tuple syntax, in which instance fields are initialized.
-```typescript-ts
-v = Point new (x = 3.0, y = 5.5);        w = v.x;
-```
-Type fields belong to the type, and are initialized/accessed as such.
-```typescript-ts
-Point.color = (255.0, 0.0, 0.0);     w = Point.color;
-```
-The `opaque` modifier can be used to disallow access of a field outside of the type's message handlers.
-```typescript-ts
-type Ui (
-    opaque widgets,
-    opaque @bg_color,
-)
-// Error: cannot initialize opaque field `buf` directly
-ui = Ui (widgets = (my_button, my_text));
-// Error: cannot access opaque field `buf`
-col = Ui.bg_color;
-```
+Howl's vision is to be a simple yet powerfully expressive programming environment to bring the computing revolution to everyone. In order to bridge this gap, Howl's syntax attempts to borrow from natural language when possible while remaining readable, clear, and concise.
 
-## Block/lambda definitions
-Blocks (with form `[ body ]`) are equivalent to the evaluation of `body`
-```typescript-ts
-v = [ 5 ]               // 5
-v = [ 5 + 4 ]           // 9
-v = [ [5 + 4] > 7 ]     // true
-```
-Lambdas (with form `[ arg1, arg2, ... | body ]`) define a lambda that can be evaluated by passing args as a tuple.
-```typescript-ts
-add = [ num1, num2 | num1 + num2 ]
-double = [ num | num * 2 ]
-```
-
-## Handlers
-Lambdas can be associated with a type and gain special access to the type's fields even if they are opaque. These are called **instance handlers**, and take the special `self` keyword as their first argument.
-```typescript-ts
-type Point (
-    x,
-    y,
-    opaque origin,
-)
-Point << relative_x [ self | self.x + origin.x ]
-```
-_Type_ handlers, on the other hand, are associated lambdas which do not act on a specific instance. As such, they do not take `self`. This distinction is somewhat akin to instance fields vs type fields.
-```typescript-ts
-Point << @whatami [ | "A point!" ]
-```
-Evaluating one of these lambdas is referred to as 'message passing'. As such, the lambdas are referred to as 'handlers', since they handle incoming messages. Message passing takes the syntatic form `<TYPE>/<INSTANCE> <MSG> <ARG1> <ARG2> ...`.
-```typescript-ts
-p = Point new (x = 2, y = 0)
-x = p relative_x
-v = Point whatami
-
-Point << add_x [ self, x | self.x = self.x + x ]
-p add_x 2
-```
-In fact, `<<` and `new` are handlers too! Point is a `Type` instance in the global namespace, and the `<<` takes an `Ident` (handler name) and `Lambda` (handler lambda), and adds it to the type.
+Howl is _not_ designed to be a high-performance systems language (at least for the low architectures of today). However, it hopes in the long term to enable reliable, dynamic, self-healing, and infinitly scaleable systems.
 
 
-Arguments can be prefixed with a `#` to indicate they should NOT be evaluated, and rather passed as raw syntax
-```typescript-ts
-if_not = [
-    cond,    // Standard argument
-    #body    // MACRO argument
-    |
-    cond if_true body
-    // `if_true`/`if_false` take syntax and evaluate it conditionally
-    // as such, we pass body as raw syntax
+
+# Objects and Messages
+All values in Howl are **objects**. Objects can be sent **messages**, and may return **responses** to the messages.
+
+A few basic syntaxes are provided for object construction:
+```
+5                                         // An Integer
+```
+```
+3.14                                      // A Float
+```
+```
+"Hello, world!"                           // A String
+```
+```
+#x                                        // A Symbol
+```
+```
+{ 5, 3, 4 }                               // A List
+```
+```
+{ #x := 5, "Jonathan" := #johnSmith  }    // A Dictionary
+```
+
+Messages can then be sent to these objects. For instance, Integer objects understand the '+' message, which responds with a new Integer based on the sum of two input Integers.
+```
+5 + 3    // Response: an Integer object with value 8
+```
+
+`:=` binds Objects to **variables**.
+```
+x := 5.        // x is now bound to an Integer object with value 5
+y := x + 3.    // y is now bound to the response of 'x + 3', which is an Integer object with value 8
+```
+
+
+
+# Messaging syntax
+Message sends can take any of the following forms:
+
+### Unary
+These messages simply tell an object to execute an action:
+```
+Point new.
+Log open.
+Rectangle new.
+```
+
+### Binary
+Binary messages allow mathematical notation:
+```
+1 + 2.
+value = 5.    // Either a True or a False object.
+```
+Binary messages can be chained, and will be evaluated left-to-right.
+```
+2 + 4 * 3.    // Evaluates as (2 + 4) * 3
+```
+
+### Named
+```
+myList append: 5.
+myList at: 4 insert: 33.
+```
+
+## Parentheses
+A message send can be parenthesised to prioritise its execution. The response returned then replaces the group.
+
+For instance, we can send an unary constructor message, then send a binary message to the response.
+```
+(Integer random) + 3.    // The (Integer random) message returns a random integer as its response
+```
+Or, we can send a named message, then another named message to the response of the first:
+```
+(1 to: 10) map: [ /* ... */ ]    // (1 to: 10) responds with the sequence 1, 2, .., 10
+```
+
+
+## Call Pipelines
+A **sentence** is the basic unit of Howl code. It can be formed from one or more messages followed by a terminal period. The following forms are accepted:
+
+### Pipelines
+Multiple message sends can be chained together, with each message being sent to the response returned by the previous. These messages are split by arrows.
+```
+myDictionary at: "John Smith" ->    // This message responds with the Person at the key "John Smith"
+    age ->                          // This message requests individual's age from the Person response above
+    > 18.                           // This message checks if the age response is greater than 18
+    
+2 + 4 * 3 ->                        // This computes the mathematical expression
+    isEven ->                       // This checks if the response of the computation above is even
+    ifTrue: [ /* ... */ ].          // This runs the block (covered below!) if the response above is True
+```
+
+### Cascades
+Multiple messages can also be sent in sequence to the same object. These messages are split by commas.
+```
+myDictionary 
+    put: johnSmith at: "John Smith",        // Puts a name-object pair into myDictionary
+    put: graceHopper at: "Grace Hopper".    // Puts another name-object pair into myDictionary
+  
+(Button new)                           // A new Button object
+    label: "Click me!",                // Sets the label of the new Button
+    colour: (Colour hex: 0x40E0D0),    // Sets the colour of the new Button
+    whenClicked: [ /* ... */ ],        // Sets the behaviour of the new Button when it is clicked
+    display.                           // Displays the new Button on the current Canvas
+```
+
+
+
+
+# Types
+As we have seen, every object in Howl has a **type**. Types define behaviour (all `Button` instances can be acted on the same way!) and structure (all `Button` instances contain some data that define them). Technically, type objects (such as Integer, Button, Dictionary) are instances of the `Type` type!
+
+New types can be constructed by sending a `named:withInstanceFields:` or `named:withInstanceFields:andTypeFields:` message to `Type`.
+```
+Type 
+    named: #Customer
+    withInstanceFields: #(named, age, address, email, preferredLanguage)
+    andTypeFields: #(allCustomers)
+```
+Instance fields vary per instance; each customer has a different first and last name, age, address, etc. Type fields, on the other hand, are common to all instances of the type. Here, we store a registry of all customers as a type field!
+
+
+
+# Blocks and Handlers
+Blocks are Objects that contain some code.
+```
+[ 5 + 3 ]    // A block that contains a single sentence
+```
+The block does not immediately evaluate; the `value` message must be passed.
+```
+[ 5 + 3 ] value.
+```
+If the last sentence in the block does not terminate with a period, its value is the block's response.
+```
+out := [ 5 + 3 ] value.    // out is bound to an Integer object of value 8.
+```
+Alternatively, a sentence can be prepended with `^`. This escapes all inner blocks, and forces the outermost block to respond with the sentence's value.
+```
+[
+    x := 2.
+    x isEven -> ifTrue: [ ^ x + 5 ].    // This makes the outer block exit with a response of 7
+    ^ x    // This will never run, but if it did it would exit with the value of x as the response
 ]
-setf = [
-    #names,                      // a raw data definition of form (val, ..)
-    #op: [ self | self == #= ],  // a 'restriction statement'
-    body
-    |
-    names values for_each [ name: Ident | Globals set name body ]
-]
-// Usage:
-setf (v1, v2, v3) = 3
 ```
-## Restriction statements
-Must be an ident/tuple (`Type`) OR block OR lambda taking singular `self` argument (representing the value of the argument)
-Each statement in the block must evaluate to a `Type`, `Bool`, or `Trait`
-- If `Type`, the arg is checked for the property `self typeof == 'Type'`
-- If `Bool`, checked for property `true`
-- If `Trait`, checked that all `Trait` methods are implemented for `self typeof`
-```typescript-ts
-[ arg: Int | ] 5;
-[ arg: [List; Collection] | ] (1, 2, 3);
-[ arg: [
-     self
-    |
-    List;
-    self for_each [ item | [item typeof] == Int ]
+Blocks evaluate in an insolated **context**; as such, they do not have access to variable bindings in outer contexts. However, the block can begin with a capture clause that binds variables from the outer context into the inner context.
+```
+x := 5.
+y := 10.
+
+myBlock := [ | x, y | x + y ].    // This block has x and y bound in scope
+
+x := 3.
+out := myBlock value.             // out is bound to an Integer of value 13; the current x and y values are used
+```
+Blocks can also accept **arguments**, or values that specify its behavior. Arguments are specified before captures.
+```
+z := 3.
+myBlock := [ x, y | z | x + y + z ].
+```
+Blocks which handle arguments are referred to as **handlers**. Handlers can be executed with the `call:` message, and a List or Dictionary (with Symbol keys) containing corresponding values.
+```
+myBlock call: { 1, 2 }.
+myBlock call: { #x := 1, #y := 2 }.
+```
+
+## Object Handlers
+Continuing the example from above, let us add **message handlers** to the `Customer` type.
+
+On creation, types already have some default message handlers. Three of these are `instanceMessage:handler:`, `typeMessage:handler:`, and `typeConstructor:handler:`, which enable the addition of new handlers. These handlers are then called in response to messages sent to type instances or the type itself, and all instance/type fields are bound into scope during handler execution.
+```
+Customer 
+    typeConstructor: #named:
+    handler: [ 
+        self, aName
+        |
+        name := aName.                       // Sets instance field
+        preferredLanguage := English.        // Sets instance field
+        allCustomers at: aName put: self.    // Sets type field
+        self
+    ].
+Customer
+    instanceMessage: #verifyEmail!:
+    handler: [
+        self, anEmailAddress
+        |
+        anEmailAddress contains: "@" -> 
+            ifFalse: [ MalformedInputError new ]            // Responds with a MalformedInputError
+            ifTrue: [ | email | email := anEmailAddress. ]    // Sets the email field and responds with nil
     ]
-|
-] (1, 2, 3);
-```
-On lambda blocks, a return restriction can be placed:
-```typescript-ts
-[ x: Int, y: Int -> Int | ^[x + y] ]
-```
-On type definitions, restrictions can be placed which are checked on field access:
-```typescript-ts
-Point = type (
-    x: Numeric,
-    y: [self | Numeric; self != 0]
-)
-```
-## Traits
-```typescript-ts
-trait Collection (all, for_each, first, nth)
-```
 
-
-
-
-
-
-
-# Playground
-```typescript-ts
-// OR fields: a type that can be one of its field variants
-// Variants can be modified later at runtime
-type Shape (
-    Point(p) ||
-    Line(start, end) ||
-    Bezier(start, mid, end)
-)
-// AND fields: a type that has ALL of its field variants
-// Variants can be modified later at runtime
-type Point (
-    x: Float,
-    y: Float,
-    // Variable shared by all elements of the class
-    // Changing its value will update all `Point` instances
-    ~render_color: (Float, Float, Float),
-)
-
-type Response (
-    clicked: bool,
-    hovered: bool,
-)
-// Sets the `place` global to the type of this function signature
-place = |Shape| -> Response;
-type Window (
-    buf, // Some opaque reference from Rust
-)
-Window << place [self, element |
-    element
-        if_case Shape.Point [point | self.buf draw_point point.p],
-        // `if_case` is a function that runs EXPR if an OR type matches VARIANT
-        // Commas at EOL signify to run the next thing on the same input
-        // here, they run if_case multiple times on `element`
-        if_case Shape.Line [line | self.buf draw_line line.start line.end];
-
-    bezier_callback = [bezier | self.buf draw_bezier line.start line.mid line.end];
-    if_case Shape.Bezier bezier_callback;
-]
-window = Window (buf = /* magic initialization */)
-
-// Type restrictions are OPTIONAL on everything, they simply add a runtime guard
-// to ensure proper data is passed
-draw = || -> Response;
-// Implements draw's signature for the `Point` type
-Point << draw [ | window place Shape.Point(self) ]
-
-// Construct a Point instance
-p = Point (x = 3, y = 5)
-p draw window
-
-// Defines a macro
-// `#` keeps body from being evaluated as a function argument
-// Instead, it is passed as an Expr: LITERAL CODE
-// If cond evaluates to true, THEN the body is executed
-when = [cond, #body |
-    cond if_true body*
-]
-typeof when // evaluates to |_, _|
-
-// Defines a macro to bind a global variable
-// Binds the evaluation of body to `name`
-// Name is not evaluated, but passed as a literal identifier
-// Argument guards can also be expressions: here, we check that `#sym` is a literal equal sign
-var = [#name: Expr.Ident, #sym: [_ == #=], body |
-    Globals add #name body
-]
-var v = 5
-
-Collection = Trait new (#for_each, #do_each, #all, #iter_type) // List of behaviours
-// Defines a macro that binds each given input name to body
-setf = [
-    #names: [ self |
-        Collection; /* ensures the `#names` input implements all Collection behaviours */
-        self iter_type == Expr.Ident /* ensures each item in the Collection is an identifier */
-    ],
-    body
-    |
-    names do_each [name | var name = body]
-]
+jane := Customer named: "Jane Doe".
+jane verifyEmail!: "janedoe@gmail.com" -> ifError: [ Log append: "Invalid email address". ].
 ```
